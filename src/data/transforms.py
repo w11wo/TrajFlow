@@ -11,7 +11,7 @@ from rdp import rdp  # <<< Import RDP
 # ... (ensure these helper functions are present) ...
 def compute_arc_length_t(points):  # ... (implementation) ...
     """Computes the arc length parameterization and returns uniformly sampled points."""
-    points = np.asarray(points);
+    points = np.asarray(points)
     N = len(points)
     if N < 2:
         # If less than 2 points, return linear space and repeat the point(s)
@@ -21,7 +21,7 @@ def compute_arc_length_t(points):  # ... (implementation) ...
 
     # Calculate segment lengths and cumulative length
     diffs = np.diff(points, axis=0)
-    segment_lengths = np.sqrt(np.sum(diffs ** 2, axis=1))
+    segment_lengths = np.sqrt(np.sum(diffs**2, axis=1))
     s = np.concatenate(([0], np.cumsum(segment_lengths)))
     total_length = s[-1]
 
@@ -56,10 +56,20 @@ def compute_arc_length_t(points):  # ... (implementation) ...
 
     # Interpolate x and y coordinates separately onto the uniform parameterization
     try:
-        interp_func_x = interp1d(t_orig_unique, points_unique[:, 0], kind='linear', bounds_error=False,
-                                 fill_value=(points_unique[0, 0], points_unique[-1, 0]))
-        interp_func_y = interp1d(t_orig_unique, points_unique[:, 1], kind='linear', bounds_error=False,
-                                 fill_value=(points_unique[0, 1], points_unique[-1, 1]))
+        interp_func_x = interp1d(
+            t_orig_unique,
+            points_unique[:, 0],
+            kind="linear",
+            bounds_error=False,
+            fill_value=(points_unique[0, 0], points_unique[-1, 0]),
+        )
+        interp_func_y = interp1d(
+            t_orig_unique,
+            points_unique[:, 1],
+            kind="linear",
+            bounds_error=False,
+            fill_value=(points_unique[0, 1], points_unique[-1, 1]),
+        )
         points_uniform = np.stack([interp_func_x(t_uniform), interp_func_y(t_uniform)], axis=-1)
     except ValueError:
         # Fallback in case of interpolation error
@@ -70,10 +80,11 @@ def compute_arc_length_t(points):  # ... (implementation) ...
 
 def detect_anchors(curve):  # ... (implementation) ...
     """Detects anchor points (local extrema in y and endpoints) in a curve."""
-    y = curve[:, 1];
+    y = curve[:, 1]
     N_curve = len(curve)
-    if N_curve < 2: return np.array([0]) if N_curve == 1 else np.array([])
-    dy = np.diff(y);
+    if N_curve < 2:
+        return np.array([0]) if N_curve == 1 else np.array([])
+    dy = np.diff(y)
     anchors = [0]  # Start point is always an anchor
     # Find points where the sign of the y-derivative changes (local extrema)
     for i in range(1, len(dy)):
@@ -92,32 +103,36 @@ def detect_anchors(curve):  # ... (implementation) ...
 
 def _calculate_curvature(curve_points):  # ... (implementation) ...
     """Calculates the curvature of a 2D curve defined by points."""
-    if len(curve_points) < 3: return np.zeros(len(curve_points))
+    if len(curve_points) < 3:
+        return np.zeros(len(curve_points))
     # Use np.gradient for first and second derivatives
-    dx_dt = np.gradient(curve_points[:, 0]);
+    dx_dt = np.gradient(curve_points[:, 0])
     dy_dt = np.gradient(curve_points[:, 1])
-    d2x_dt2 = np.gradient(dx_dt);
+    d2x_dt2 = np.gradient(dx_dt)
     d2y_dt2 = np.gradient(dy_dt)
     # Formula for curvature: |x'y'' - y'x''| / (x'^2 + y'^2)^(3/2)
     numerator = np.abs(dx_dt * d2y_dt2 - dy_dt * d2x_dt2)
-    denominator = (dx_dt ** 2 + dy_dt ** 2) ** 1.5
+    denominator = (dx_dt**2 + dy_dt**2) ** 1.5
     # Add small epsilon to denominator to avoid division by zero
     curvature = numerator / (denominator + 1e-12)
     curvature[np.isnan(curvature)] = 0  # Handle potential NaNs
     return curvature
 
 
-def _calculate_knots(num_interior_knots, N_uniform, uniform_curve=None,
-                     knot_strategy='uniform'):  # ... (implementation) ...
+def _calculate_knots(
+    num_interior_knots, N_uniform, uniform_curve=None, knot_strategy="uniform"
+):  # ... (implementation) ...
     """Calculates interior knot locations based on different strategies."""
-    if num_interior_knots < 0: return None  # Invalid input
-    if num_interior_knots == 0: return np.array([])  # No interior knots needed
+    if num_interior_knots < 0:
+        return None  # Invalid input
+    if num_interior_knots == 0:
+        return np.array([])  # No interior knots needed
 
     knots = None
     t_param = np.linspace(0, 1, N_uniform, endpoint=True)  # Parameter space [0, 1]
 
     # --- Anchor Knot Strategy ---
-    if knot_strategy == 'anchor' and uniform_curve is not None and len(uniform_curve) > 2:
+    if knot_strategy == "anchor" and uniform_curve is not None and len(uniform_curve) > 2:
         try:
             anchor_idx_for_knots = detect_anchors(uniform_curve)
             if len(anchor_idx_for_knots) >= 2:
@@ -141,14 +156,18 @@ def _calculate_knots(num_interior_knots, N_uniform, uniform_curve=None,
                             # Interpolate to find knot locations in t-space
                             adaptive_knots = np.interp(target_props, cumulative_t_dist, valid_t_anchors_end)
                             # Validation: ensure knots are within (0, 1) and distinct
-                            if len(adaptive_knots) == num_interior_knots and np.all(adaptive_knots > 1e-7) and np.all(
-                                    adaptive_knots < 1 - 1e-7) and np.all(np.diff(np.unique(adaptive_knots)) > 1e-7):
+                            if (
+                                len(adaptive_knots) == num_interior_knots
+                                and np.all(adaptive_knots > 1e-7)
+                                and np.all(adaptive_knots < 1 - 1e-7)
+                                and np.all(np.diff(np.unique(adaptive_knots)) > 1e-7)
+                            ):
                                 knots = np.unique(adaptive_knots)
         except Exception:
             pass  # Fallback to uniform if anchor strategy fails
 
     # --- Curvature Knot Strategy ---
-    elif knot_strategy == 'curvature' and uniform_curve is not None and len(uniform_curve) > 2:
+    elif knot_strategy == "curvature" and uniform_curve is not None and len(uniform_curve) > 2:
         try:
             curvature = _calculate_curvature(uniform_curve)
             # Use absolute curvature as weight, add epsilon for stability
@@ -186,90 +205,117 @@ def _calculate_knots(num_interior_knots, N_uniform, uniform_curve=None,
     return knots if len(knots) > 0 else None
 
 
-def point2para(points, method='dct', **kwargs):
+def point2para(points, method="dct", **kwargs):
     """Convert 2D discrete points to a curve parameter representation."""
     # --- Keep previous parameterization methods ---
     # --- Add 'rdp_k' ---
     points = np.asarray(points)
-    if len(points) < 2: return None
+    if len(points) < 2:
+        return None
     para_method = method
-    if method == 'direct_k_cubic': method = 'direct_k'  # Treat cubic as variant of direct_k
+    if method == "direct_k_cubic":
+        method = "direct_k"  # Treat cubic as variant of direct_k
 
     try:
         # --- direct_k: Uniform sampling after arc-length param ---
-        if method == 'direct_k':
-            K = kwargs.get('K')
-            if K is None: raise ValueError("K required for 'direct_k'")
-            t_uniform_param, uniform_curve = compute_arc_length_t(points);
+        if method == "direct_k":
+            K = kwargs.get("K")
+            if K is None:
+                raise ValueError("K required for 'direct_k'")
+            t_uniform_param, uniform_curve = compute_arc_length_t(points)
             N_uniform = len(uniform_curve)
-            if N_uniform == 0: return None
-            actual_K = min(K, N_uniform);
+            if N_uniform == 0:
+                return None
+            actual_K = min(K, N_uniform)
             actual_K = max(1, actual_K)  # Ensure K is valid
             # Select K points uniformly from the arc-length parameterized curve
             t_select_param = np.linspace(0, 1, actual_K, endpoint=True)
             # Interpolate to get the selected points
-            interp_func_x = interp1d(t_uniform_param, uniform_curve[:, 0], kind='linear', bounds_error=False,
-                                     fill_value="extrapolate")
-            interp_func_y = interp1d(t_uniform_param, uniform_curve[:, 1], kind='linear', bounds_error=False,
-                                     fill_value="extrapolate")
+            interp_func_x = interp1d(
+                t_uniform_param,
+                uniform_curve[:, 0],
+                kind="linear",
+                bounds_error=False,
+                fill_value="extrapolate",
+            )
+            interp_func_y = interp1d(
+                t_uniform_param,
+                uniform_curve[:, 1],
+                kind="linear",
+                bounds_error=False,
+                fill_value="extrapolate",
+            )
             points_k = np.stack([interp_func_x(t_select_param), interp_func_y(t_select_param)], axis=-1)
-            para = {'method': 'direct_k', 'points_k': points_k, 'K': actual_K}
+            para = {"method": "direct_k", "points_k": points_k, "K": actual_K}
             return para
 
         # --- dct: Discrete Cosine Transform coefficients ---
-        elif method == 'dct':
-            DCT_M = kwargs.get('DCT_M')
-            if DCT_M is None: raise ValueError("DCT_M required for 'dct'")
-            t_uniform, uniform_curve = compute_arc_length_t(points);
+        elif method == "dct":
+            DCT_M = kwargs.get("DCT_M")
+            if DCT_M is None:
+                raise ValueError("DCT_M required for 'dct'")
+            t_uniform, uniform_curve = compute_arc_length_t(points)
             N = len(uniform_curve)
-            if N == 0: return None
-            actual_DCT_M = min(DCT_M, N);
+            if N == 0:
+                return None
+            actual_DCT_M = min(DCT_M, N)
             actual_DCT_M = max(1, actual_DCT_M)  # Ensure M is valid
             # Apply DCT Type II
-            x_full = dct(uniform_curve[:, 0], type=2, norm='ortho');
-            y_full = dct(uniform_curve[:, 1], type=2, norm='ortho')
+            x_full = dct(uniform_curve[:, 0], type=2, norm="ortho")
+            y_full = dct(uniform_curve[:, 1], type=2, norm="ortho")
             # Truncate coefficients
-            x_coeff_trunc = x_full[:actual_DCT_M];
+            x_coeff_trunc = x_full[:actual_DCT_M]
             y_coeff_trunc = y_full[:actual_DCT_M]
-            return {'method': 'dct', 'DCT_M': actual_DCT_M, 'N_orig_uniform': N, 'x_coeff': x_coeff_trunc,
-                    'y_coeff': y_coeff_trunc}
+            return {
+                "method": "dct",
+                "DCT_M": actual_DCT_M,
+                "N_orig_uniform": N,
+                "x_coeff": x_coeff_trunc,
+                "y_coeff": y_coeff_trunc,
+            }
 
         # --- anchor: LSQ Spline fitting with weighted anchors ---
-        elif method == 'anchor':
-            k = kwargs.get('k', 3);
-            P = kwargs.get('P');
-            w_anchor = kwargs.get('w_anchor', 1000);
-            knot_strategy = kwargs.get('knot_strategy', 'uniform')
-            if P is None or P <= 0: raise ValueError("'P' required for 'anchor' LSQ")
-            t_uniform, uniform_curve = compute_arc_length_t(points);
+        elif method == "anchor":
+            k = kwargs.get("k", 3)
+            P = kwargs.get("P")
+            w_anchor = kwargs.get("w_anchor", 1000)
+            knot_strategy = kwargs.get("knot_strategy", "uniform")
+            if P is None or P <= 0:
+                raise ValueError("'P' required for 'anchor' LSQ")
+            t_uniform, uniform_curve = compute_arc_length_t(points)
             N_uniform = len(uniform_curve)
-            if N_uniform == 0: return None
+            if N_uniform == 0:
+                return None
             # Detect anchor points
             anchor_idx = detect_anchors(uniform_curve)
             if len(anchor_idx) < 2:  # Ensure at least start and end
                 anchor_idx = np.array([0, N_uniform - 1])
                 anchor_idx = np.unique(anchor_idx[anchor_idx < N_uniform])  # Clip if needed
-            if len(anchor_idx) == 0: return None  # Should not happen with above check
+            if len(anchor_idx) == 0:
+                return None  # Should not happen with above check
             anchors = uniform_curve[anchor_idx]  # Get anchor coordinates
 
             # Validate spline parameters
-            if N_uniform <= k: return None  # Need more points than spline degree
-            actual_k = k;
+            if N_uniform <= k:
+                return None  # Need more points than spline degree
+            actual_k = k
             actual_P = P
-            if actual_P <= actual_k: actual_P = actual_k + 1  # Need P > k
-            if actual_P > N_uniform: actual_P = N_uniform  # Cannot have more control points than data points
+            if actual_P <= actual_k:
+                actual_P = actual_k + 1  # Need P > k
+            if actual_P > N_uniform:
+                actual_P = N_uniform  # Cannot have more control points than data points
             num_interior_knots = actual_P - actual_k - 1
 
             # Calculate knots based on strategy
             knots = _calculate_knots(num_interior_knots, N_uniform, uniform_curve, knot_strategy)
             # Adjust k if no interior knots are possible/needed
             if knots is None and num_interior_knots < 0:
-                actual_k = min(actual_k, actual_P - 1);
+                actual_k = min(actual_k, actual_P - 1)
                 actual_k = max(1, actual_k)  # Ensure k >= 1
 
             # Prepare data for LSQUnivariateSpline
             t_param_for_fitting = np.linspace(0, 1, N_uniform, endpoint=True)
-            x = uniform_curve[:, 0];
+            x = uniform_curve[:, 0]
             y = uniform_curve[:, 1]
             # Assign weights, higher weight to anchors
             w = np.ones(N_uniform)
@@ -283,38 +329,51 @@ def point2para(points, method='dct', **kwargs):
             except (ValueError, LinAlgError, TypeError) as e:
                 return None  # Handle fitting errors
 
-            para = {'method': 'anchor', 'spline_x': spline_x, 'spline_y': spline_y, 'k': actual_k, 'P': actual_P,
-                    'anchors': anchors, 'w_anchor': w_anchor, 'knot_strategy': knot_strategy}
+            para = {
+                "method": "anchor",
+                "spline_x": spline_x,
+                "spline_y": spline_y,
+                "k": actual_k,
+                "P": actual_P,
+                "anchors": anchors,
+                "w_anchor": w_anchor,
+                "knot_strategy": knot_strategy,
+            }
             return para
 
         # --- spline_lsq: LSQ Spline fitting without weighted anchors ---
-        elif method == 'spline_lsq':
-            k = kwargs.get('k', 3);
-            P = kwargs.get('P');
-            knot_strategy = kwargs.get('knot_strategy', 'uniform')
-            if P is None: raise ValueError("'P' required for 'spline_lsq'")
-            t_uniform, uniform_curve = compute_arc_length_t(points);
+        elif method == "spline_lsq":
+            k = kwargs.get("k", 3)
+            P = kwargs.get("P")
+            knot_strategy = kwargs.get("knot_strategy", "uniform")
+            if P is None:
+                raise ValueError("'P' required for 'spline_lsq'")
+            t_uniform, uniform_curve = compute_arc_length_t(points)
             N_uniform = len(uniform_curve)
-            if N_uniform == 0: return None
-            if N_uniform <= k: return None  # Need more points than spline degree
+            if N_uniform == 0:
+                return None
+            if N_uniform <= k:
+                return None  # Need more points than spline degree
 
             # Validate spline parameters
-            actual_k = k;
+            actual_k = k
             actual_P = P
-            if actual_P <= actual_k: actual_P = actual_k + 1  # Need P > k
-            if actual_P > N_uniform: actual_P = N_uniform  # Cannot have more control points than data points
+            if actual_P <= actual_k:
+                actual_P = actual_k + 1  # Need P > k
+            if actual_P > N_uniform:
+                actual_P = N_uniform  # Cannot have more control points than data points
             num_interior_knots = actual_P - actual_k - 1
 
             # Calculate knots
             knots = _calculate_knots(num_interior_knots, N_uniform, uniform_curve, knot_strategy)
             # Adjust k if no interior knots are possible/needed
             if knots is None and num_interior_knots < 0:
-                actual_k = min(actual_k, actual_P - 1);
+                actual_k = min(actual_k, actual_P - 1)
                 actual_k = max(1, actual_k)  # Ensure k >= 1
 
             # Prepare data (uniform weights)
             t_param_for_fitting = np.linspace(0, 1, N_uniform, endpoint=True)
-            x = uniform_curve[:, 0];
+            x = uniform_curve[:, 0]
             y = uniform_curve[:, 1]
             w = np.ones(N_uniform)  # Uniform weights
 
@@ -325,27 +384,38 @@ def point2para(points, method='dct', **kwargs):
             except (ValueError, LinAlgError, TypeError) as e:
                 return None  # Handle fitting errors
 
-            para = {'method': 'spline_lsq', 'spline_x': spline_x, 'spline_y': spline_y, 'k': actual_k, 'P': actual_P,
-                    'knot_strategy': knot_strategy}
+            para = {
+                "method": "spline_lsq",
+                "spline_x": spline_x,
+                "spline_y": spline_y,
+                "k": actual_k,
+                "P": actual_P,
+                "knot_strategy": knot_strategy,
+            }
             return para
 
         # --- dct_deviation: DCT of deviations from start-end baseline ---
-        elif method == 'dct_deviation':
+        elif method == "dct_deviation":
             K_target = kwargs.get(
-                'K')  # K is the number of *points* desired in reconstruction (indirectly related to coeffs)
-            if K_target is None: raise ValueError("K required for 'dct_deviation'")
-            if K_target <= 2: return None  # Need at least start and end
+                "K"
+            )  # K is the number of *points* desired in reconstruction (indirectly related to coeffs)
+            if K_target is None:
+                raise ValueError("K required for 'dct_deviation'")
+            if K_target <= 2:
+                return None  # Need at least start and end
             # Number of coefficients: Related to complexity, often M ~ 2K - 4
             M_coeffs = 2 * K_target - 4
-            if M_coeffs <= 0: return None
+            if M_coeffs <= 0:
+                return None
 
-            t_uniform, uniform_curve = compute_arc_length_t(points);
+            t_uniform, uniform_curve = compute_arc_length_t(points)
             N_uniform = len(uniform_curve)
-            if N_uniform < 2: return None
-            P_start = uniform_curve[0];
+            if N_uniform < 2:
+                return None
+            P_start = uniform_curve[0]
             P_end = uniform_curve[-1]
-            V_baseline = P_end - P_start;
-            baseline_len_sq = np.sum(V_baseline ** 2)
+            V_baseline = P_end - P_start
+            baseline_len_sq = np.sum(V_baseline**2)
 
             # Handle zero-length baseline (start == end)
             if baseline_len_sq < 1e-12:
@@ -365,22 +435,31 @@ def point2para(points, method='dct', **kwargs):
 
             # Apply DCT to deviations
             actual_M_coeffs = min(M_coeffs, len(d_perp))  # Ensure we don't ask for more coeffs than data
-            if actual_M_coeffs <= 0: return None
-            coeffs_full = dct(d_perp, type=2, norm='ortho')
+            if actual_M_coeffs <= 0:
+                return None
+            coeffs_full = dct(d_perp, type=2, norm="ortho")
             coeffs_trunc = coeffs_full[:actual_M_coeffs]
 
-            para = {'method': 'dct_deviation', 'P_start': P_start, 'P_end': P_end, 'coeffs': coeffs_trunc,
-                    'N_uniform': N_uniform, 'M_coeffs': actual_M_coeffs}
+            para = {
+                "method": "dct_deviation",
+                "P_start": P_start,
+                "P_end": P_end,
+                "coeffs": coeffs_trunc,
+                "N_uniform": N_uniform,
+                "M_coeffs": actual_M_coeffs,
+            }
             return para
 
         # --- fft_complex: FFT of complex representation (x + iy) ---
-        elif method == 'fft_complex':
-            K_coeffs = kwargs.get('K')  # K is number of complex coefficients
-            if K_coeffs is None: raise ValueError("K required for 'fft_complex'")
-            t_uniform, uniform_curve = compute_arc_length_t(points);
+        elif method == "fft_complex":
+            K_coeffs = kwargs.get("K")  # K is number of complex coefficients
+            if K_coeffs is None:
+                raise ValueError("K required for 'fft_complex'")
+            t_uniform, uniform_curve = compute_arc_length_t(points)
             N_uniform = len(uniform_curve)
-            if N_uniform == 0: return None
-            actual_K = min(K_coeffs, N_uniform);
+            if N_uniform == 0:
+                return None
+            actual_K = min(K_coeffs, N_uniform)
             actual_K = max(1, actual_K)  # Validate K
 
             # Create complex signal
@@ -390,17 +469,24 @@ def point2para(points, method='dct', **kwargs):
             # Truncate coefficients (take the first K)
             coeffs_trunc = Z_full[:actual_K]
 
-            para = {'method': 'fft_complex', 'coeffs': coeffs_trunc, 'N_uniform': N_uniform, 'K_coeffs': actual_K}
+            para = {
+                "method": "fft_complex",
+                "coeffs": coeffs_trunc,
+                "N_uniform": N_uniform,
+                "K_coeffs": actual_K,
+            }
             return para
 
         # --- NEW RDP_K METHOD ---
-        elif method == 'rdp_k':
-            K_target = kwargs.get('K')
-            if K_target is None: raise ValueError("K must be provided for 'rdp_k'")
-            if K_target < 2: raise ValueError("K must be >= 2 for 'rdp_k'")
+        elif method == "rdp_k":
+            K_target = kwargs.get("K")
+            if K_target is None:
+                raise ValueError("K must be provided for 'rdp_k'")
+            if K_target < 2:
+                raise ValueError("K must be >= 2 for 'rdp_k'")
 
-            max_iterations = kwargs.get('rdp_max_iter', 15)  # Max iterations for epsilon search
-            epsilon_tolerance = kwargs.get('rdp_epsilon_tol', 1e-5)  # Tolerance for epsilon search
+            max_iterations = kwargs.get("rdp_max_iter", 15)  # Max iterations for epsilon search
+            epsilon_tolerance = kwargs.get("rdp_epsilon_tol", 1e-5)  # Tolerance for epsilon search
 
             t_uniform, uniform_curve = compute_arc_length_t(points)
             N_uniform = len(uniform_curve)
@@ -408,8 +494,17 @@ def point2para(points, method='dct', **kwargs):
             # Handle edge case: very few points
             if N_uniform <= 1:
                 # Repeat the single point (or zero if empty) K_target times
-                points_k = np.repeat(uniform_curve if N_uniform > 0 else np.zeros((1, 2)), K_target, axis=0)
-                return {'method': 'rdp_k', 'simplified_points': points_k, 'K_actual': K_target, 'K_target': K_target}
+                points_k = np.repeat(
+                    uniform_curve if N_uniform > 0 else np.zeros((1, 2)),
+                    K_target,
+                    axis=0,
+                )
+                return {
+                    "method": "rdp_k",
+                    "simplified_points": points_k,
+                    "K_actual": K_target,
+                    "K_target": K_target,
+                }
 
             # Binary search for the epsilon that yields approximately K_target points
             eps_low = 0.0
@@ -417,7 +512,8 @@ def point2para(points, method='dct', **kwargs):
             max_coords = np.max(uniform_curve, axis=0)
             # Initial high epsilon: diagonal of the bounding box (a reasonable upper bound)
             eps_high = np.linalg.norm(max_coords - min_coords)
-            if eps_high < 1e-9: eps_high = 1.0  # Avoid zero epsilon if all points are same
+            if eps_high < 1e-9:
+                eps_high = 1.0  # Avoid zero epsilon if all points are same
 
             best_eps_found = eps_high
             best_points = None
@@ -426,7 +522,8 @@ def point2para(points, method='dct', **kwargs):
             for _ in range(max_iterations):
                 eps_mid = (eps_low + eps_high) / 2.0
                 # Avoid extremely small epsilon causing issues
-                if eps_mid < 1e-10: break
+                if eps_mid < 1e-10:
+                    break
 
                 # Apply RDP with the current epsilon guess
                 simplified = rdp(uniform_curve, epsilon=eps_mid)
@@ -468,10 +565,20 @@ def point2para(points, method='dct', **kwargs):
                 t_insert = np.linspace(0, 1, K_target, endpoint=True)
 
                 # Interpolate to get the final K points
-                interp_x_add = interp1d(t_simplified, final_points[:, 0], kind='linear', bounds_error=False,
-                                        fill_value="extrapolate")
-                interp_y_add = interp1d(t_simplified, final_points[:, 1], kind='linear', bounds_error=False,
-                                        fill_value="extrapolate")
+                interp_x_add = interp1d(
+                    t_simplified,
+                    final_points[:, 0],
+                    kind="linear",
+                    bounds_error=False,
+                    fill_value="extrapolate",
+                )
+                interp_y_add = interp1d(
+                    t_simplified,
+                    final_points[:, 1],
+                    kind="linear",
+                    bounds_error=False,
+                    fill_value="extrapolate",
+                )
                 final_points = np.column_stack([interp_x_add(t_insert), interp_y_add(t_insert)])
 
             elif current_count > K_target:
@@ -481,10 +588,12 @@ def point2para(points, method='dct', **kwargs):
                 indices = np.round(np.linspace(0, current_count - 1, K_target)).astype(int)
                 final_points = best_points[indices]
 
-            return {'method': 'rdp_k',
-                    'simplified_points': final_points,
-                    'K_actual': K_target,  # Should always be K_target now
-                    'K_target': K_target}
+            return {
+                "method": "rdp_k",
+                "simplified_points": final_points,
+                "K_actual": K_target,  # Should always be K_target now
+                "K_target": K_target,
+            }
             # --- End RDP_K ---
 
         else:
@@ -495,93 +604,123 @@ def point2para(points, method='dct', **kwargs):
 
 def para2point(para, N_new, **kwargs):
     """Reconstruct 2D points from parameter representation. Returns None if reconstruction fails."""
-    if para is None: return None
+    if para is None:
+        return None
     # Allow overriding the method stored in para
-    method = kwargs.get('method_override', para.get('method'))
-    if method is None: return None
+    method = kwargs.get("method_override", para.get("method"))
+    if method is None:
+        return None
 
     try:
         # --- direct_k: Linear interpolation between K points ---
-        if method == 'direct_k':
-            if 'points_k' not in para or 'K' not in para: raise ValueError("Requires 'points_k'/'K'")
-            points_k = para['points_k'];
-            K = para['K']
-            if K == 0: return np.empty((N_new, 2)) * np.nan  # Handle empty input
-            if K < 2: return np.repeat(points_k, N_new, axis=0)  # Repeat if only one point
+        if method == "direct_k":
+            if "points_k" not in para or "K" not in para:
+                raise ValueError("Requires 'points_k'/'K'")
+            points_k = para["points_k"]
+            K = para["K"]
+            if K == 0:
+                return np.empty((N_new, 2)) * np.nan  # Handle empty input
+            if K < 2:
+                return np.repeat(points_k, N_new, axis=0)  # Repeat if only one point
             # Interpolate between the K points
             t_param_k = np.linspace(0, 1, K, endpoint=True)
             t_param_new = np.linspace(0, 1, N_new, endpoint=True)
-            interp_func_x = interp1d(t_param_k, points_k[:, 0], kind='linear', bounds_error=False,
-                                     fill_value="extrapolate")
-            interp_func_y = interp1d(t_param_k, points_k[:, 1], kind='linear', bounds_error=False,
-                                     fill_value="extrapolate")
+            interp_func_x = interp1d(
+                t_param_k,
+                points_k[:, 0],
+                kind="linear",
+                bounds_error=False,
+                fill_value="extrapolate",
+            )
+            interp_func_y = interp1d(
+                t_param_k,
+                points_k[:, 1],
+                kind="linear",
+                bounds_error=False,
+                fill_value="extrapolate",
+            )
             result = np.column_stack([interp_func_x(t_param_new), interp_func_y(t_param_new)])
-            if np.isnan(result).any(): return None  # Check for NaN results
+            if np.isnan(result).any():
+                return None  # Check for NaN results
             return result
 
         # --- direct_k_cubic: Cubic (or linear if K<4) interpolation between K points ---
-        elif method == 'direct_k_cubic':
-            if 'points_k' not in para or 'K' not in para: raise ValueError("Requires 'points_k'/'K'")
-            points_k = para['points_k'];
-            K = para['K']
-            if K == 0: return np.empty((N_new, 2)) * np.nan
-            if K < 2: return np.repeat(points_k, N_new, axis=0)
+        elif method == "direct_k_cubic":
+            if "points_k" not in para or "K" not in para:
+                raise ValueError("Requires 'points_k'/'K'")
+            points_k = para["points_k"]
+            K = para["K"]
+            if K == 0:
+                return np.empty((N_new, 2)) * np.nan
+            if K < 2:
+                return np.repeat(points_k, N_new, axis=0)
             # Choose interpolation kind based on number of points
-            kind = 'cubic' if K >= 4 else 'linear'
+            kind = "cubic" if K >= 4 else "linear"
             t_param_k = np.linspace(0, 1, K, endpoint=True)
             t_param_new = np.linspace(0, 1, N_new, endpoint=True)
             try:
-                interp_func_x = interp1d(t_param_k, points_k[:, 0], kind=kind, bounds_error=False,
-                                         fill_value="extrapolate")
-                interp_func_y = interp1d(t_param_k, points_k[:, 1], kind=kind, bounds_error=False,
-                                         fill_value="extrapolate")
+                interp_func_x = interp1d(
+                    t_param_k,
+                    points_k[:, 0],
+                    kind=kind,
+                    bounds_error=False,
+                    fill_value="extrapolate",
+                )
+                interp_func_y = interp1d(
+                    t_param_k,
+                    points_k[:, 1],
+                    kind=kind,
+                    bounds_error=False,
+                    fill_value="extrapolate",
+                )
                 result = np.column_stack([interp_func_x(t_param_new), interp_func_y(t_param_new)])
-                if np.isnan(result).any(): return None
+                if np.isnan(result).any():
+                    return None
                 return result
             except ValueError as e:
                 return None  # Handle interpolation errors
 
         # --- dct: Inverse DCT ---
-        elif method == 'dct':
-            if not all(k in para for k in ['DCT_M', 'N_orig_uniform', 'x_coeff', 'y_coeff']):
+        elif method == "dct":
+            if not all(k in para for k in ["DCT_M", "N_orig_uniform", "x_coeff", "y_coeff"]):
                 raise ValueError("Missing required keys for 'dct' reconstruction")
-            DCT_M = para['DCT_M'];
-            N_orig_uniform = para['N_orig_uniform'];
-            x_coeff_trunc = para['x_coeff'];
-            y_coeff_trunc = para['y_coeff']
+            DCT_M = para["DCT_M"]
+            N_orig_uniform = para["N_orig_uniform"]
+            x_coeff_trunc = para["x_coeff"]
+            y_coeff_trunc = para["y_coeff"]
             # Pad coefficients with zeros if necessary
-            x_coeff = np.zeros(N_orig_uniform);
+            x_coeff = np.zeros(N_orig_uniform)
             y_coeff = np.zeros(N_orig_uniform)
             len_coeffs = min(DCT_M, N_orig_uniform, len(x_coeff_trunc))  # Use actual length of stored coeffs
             x_coeff[:len_coeffs] = x_coeff_trunc[:len_coeffs]
             len_coeffs = min(DCT_M, N_orig_uniform, len(y_coeff_trunc))  # Use actual length of stored coeffs
             y_coeff[:len_coeffs] = y_coeff_trunc[:len_coeffs]
             # Apply inverse DCT Type II, requesting N_new points
-            x_rec = idct(x_coeff, type=2, n=N_new, norm='ortho')
-            y_rec = idct(y_coeff, type=2, n=N_new, norm='ortho')
+            x_rec = idct(x_coeff, type=2, n=N_new, norm="ortho")
+            y_rec = idct(y_coeff, type=2, n=N_new, norm="ortho")
             return np.column_stack([x_rec, y_rec])
 
         # --- anchor / spline_lsq: Evaluate the stored splines ---
-        elif method in ['anchor', 'spline_lsq']:
-            if 'spline_x' not in para or 'spline_y' not in para:
+        elif method in ["anchor", "spline_lsq"]:
+            if "spline_x" not in para or "spline_y" not in para:
                 raise ValueError(f"Missing 'spline_x' or 'spline_y' for '{method}' reconstruction")
-            spline_x = para['spline_x'];
-            spline_y = para['spline_y']
+            spline_x = para["spline_x"]
+            spline_y = para["spline_y"]
             t_new = np.linspace(0, 1, N_new, endpoint=True)
             # Evaluate splines at new points
             return np.column_stack([spline_x(t_new), spline_y(t_new)])
 
         # --- dct_deviation: Reconstruct deviations and add back to baseline ---
-        elif method == 'dct_deviation':
-            if not all(k in para for k in ['P_start', 'P_end', 'coeffs', 'N_uniform', 'M_coeffs']):
+        elif method == "dct_deviation":
+            if not all(k in para for k in ["P_start", "P_end", "coeffs", "N_uniform", "M_coeffs"]):
                 raise ValueError("Missing required keys for 'dct_deviation' reconstruction")
-            P_start = para['P_start'];
-            P_end = para['P_end'];
-            coeffs = para['coeffs'];
-            N_uniform = para['N_uniform'];
-            M_coeffs = para['M_coeffs']
-            V_baseline = P_end - P_start;
-            baseline_len_sq = np.sum(V_baseline ** 2)
+            P_start = para["P_start"]
+            P_end = para["P_end"]
+            coeffs = para["coeffs"]
+            N_uniform = para["N_uniform"]
+            M_coeffs = para["M_coeffs"]
+            V_baseline = P_end - P_start
+            baseline_len_sq = np.sum(V_baseline**2)
 
             # Handle zero-length baseline
             if baseline_len_sq < 1e-12:
@@ -595,7 +734,7 @@ def para2point(para, N_new, **kwargs):
             coeffs_full = np.zeros(N_uniform)
             len_to_pad = min(M_coeffs, N_uniform, len(coeffs))  # Use actual length of stored coeffs
             coeffs_full[:len_to_pad] = coeffs[:len_to_pad]
-            d_perp_rec = idct(coeffs_full, type=2, n=N_new, norm='ortho')  # Request N_new points
+            d_perp_rec = idct(coeffs_full, type=2, n=N_new, norm="ortho")  # Request N_new points
 
             # Recreate baseline points and add reconstructed deviations
             t_new = np.linspace(0, 1, N_new, endpoint=True)
@@ -604,47 +743,51 @@ def para2point(para, N_new, **kwargs):
             return P_rec
 
         # --- fft_complex: Inverse FFT ---
-        elif method == 'fft_complex':
-            if not all(k in para for k in ['coeffs', 'N_uniform', 'K_coeffs']):
+        elif method == "fft_complex":
+            if not all(k in para for k in ["coeffs", "N_uniform", "K_coeffs"]):
                 raise ValueError("Missing required keys for 'fft_complex' reconstruction")
-            coeffs = para['coeffs'];
-            N_uniform = para['N_uniform'];
-            K_coeffs = para['K_coeffs']
+            coeffs = para["coeffs"]
+            N_uniform = para["N_uniform"]
+            K_coeffs = para["K_coeffs"]
             # Pad coefficients with zeros
             Z_full = np.zeros(N_uniform, dtype=np.complex128)
             len_to_pad = min(K_coeffs, N_uniform, len(coeffs))  # Use actual length of stored coeffs
             Z_full[:len_to_pad] = coeffs[:len_to_pad]
             # Apply inverse FFT, requesting N_new points
             z_rec = np.fft.ifft(Z_full, n=N_new)
-            x_rec = z_rec.real;
+            x_rec = z_rec.real
             y_rec = z_rec.imag
             return np.column_stack([x_rec, y_rec])
 
         # --- RDP_K METHOD (Reconstruction from simplified points) ---
-        elif method == 'rdp_k':
-            if 'simplified_points' not in para: raise ValueError("Requires 'simplified_points'")
-            simplified_points = para['simplified_points']
+        elif method == "rdp_k":
+            if "simplified_points" not in para:
+                raise ValueError("Requires 'simplified_points'")
+            simplified_points = para["simplified_points"]
             N_simplified = len(simplified_points)
 
-            if N_simplified == 0: return np.empty((N_new, 2)) * np.nan
-            if N_simplified < 2: return np.repeat(simplified_points, N_new, axis=0)
+            if N_simplified == 0:
+                return np.empty((N_new, 2)) * np.nan
+            if N_simplified < 2:
+                return np.repeat(simplified_points, N_new, axis=0)
 
             # Interpolate between simplified points using arc-length param
             # Use the same compute_arc_length_t but only get the t parameter
             t_rdp, simplified_points_uniform = compute_arc_length_t(
-                simplified_points)  # Get t and potentially uniform points
+                simplified_points
+            )  # Get t and potentially uniform points
 
             # Ensure t_rdp corresponds to the original simplified_points if compute_arc_length_t modified them
             # Recompute t based on the *original* simplified points for accuracy
             diffs_rdp = np.diff(simplified_points, axis=0)
-            segment_lengths_rdp = np.sqrt(np.sum(diffs_rdp ** 2, axis=1))
+            segment_lengths_rdp = np.sqrt(np.sum(diffs_rdp**2, axis=1))
             s_rdp = np.concatenate(([0], np.cumsum(segment_lengths_rdp)))
             total_length_rdp = s_rdp[-1]
             if total_length_rdp < 1e-9:
                 t_rdp_accurate = np.linspace(0, 1, N_simplified, endpoint=True)
             else:
                 t_rdp_accurate = s_rdp / total_length_rdp
-                t_rdp_accurate[0] = 0.0;
+                t_rdp_accurate[0] = 0.0
                 t_rdp_accurate[-1] = 1.0  # Ensure bounds
 
             # Remove duplicates in t_rdp_accurate for interpolation
@@ -658,12 +801,22 @@ def para2point(para, N_new, **kwargs):
             t_new = np.linspace(0, 1, N_new, endpoint=True)
             try:
                 # Choose interpolation kind - linear is often sufficient for RDP output
-                kind = 'linear'  # 'cubic' if len(t_rdp_unique) >= 4 else 'linear'
+                kind = "linear"  # 'cubic' if len(t_rdp_unique) >= 4 else 'linear'
 
-                interp_func_x = interp1d(t_rdp_unique, simplified_points_unique[:, 0], kind=kind, bounds_error=False,
-                                         fill_value="extrapolate")
-                interp_func_y = interp1d(t_rdp_unique, simplified_points_unique[:, 1], kind=kind, bounds_error=False,
-                                         fill_value="extrapolate")
+                interp_func_x = interp1d(
+                    t_rdp_unique,
+                    simplified_points_unique[:, 0],
+                    kind=kind,
+                    bounds_error=False,
+                    fill_value="extrapolate",
+                )
+                interp_func_y = interp1d(
+                    t_rdp_unique,
+                    simplified_points_unique[:, 1],
+                    kind=kind,
+                    bounds_error=False,
+                    fill_value="extrapolate",
+                )
                 result = np.column_stack([interp_func_x(t_new), interp_func_y(t_new)])
                 if np.isnan(result).any():
                     return None
@@ -673,16 +826,16 @@ def para2point(para, N_new, **kwargs):
         # --- End RDP_K ---
 
         # --- NEW RDP_K_WITHOD METHOD ---
-        elif method == 'rdp_k_withod':
+        elif method == "rdp_k_withod":
             # 1. Input Validation
-            required_keys = ['simplified_points', 'start_point', 'end_point']
+            required_keys = ["simplified_points", "start_point", "end_point"]
             if not all(key in para for key in required_keys):
                 raise ValueError(f"Requires {required_keys} in para for 'rdp_k_withod'")
 
-            simplified_points = para['simplified_points']
+            simplified_points = para["simplified_points"]
             # Ensure start/end points are numpy arrays for comparison
-            start_point = np.array(para['start_point'])
-            end_point = np.array(para['end_point'])
+            start_point = np.array(para["start_point"])
+            end_point = np.array(para["end_point"])
             N_simplified = len(simplified_points)
 
             if N_simplified == 0:
@@ -704,14 +857,14 @@ def para2point(para, N_new, **kwargs):
 
             if start_idx == end_idx:
                 # If start and end points are the same, repeat that point
-                return np.repeat(simplified_points[start_idx:start_idx + 1], N_new, axis=0)
+                return np.repeat(simplified_points[start_idx : start_idx + 1], N_new, axis=0)
             elif start_idx > end_idx:
                 # Allow reversing if user provides them in wrong order? Optional.
                 # start_idx, end_idx = end_idx, start_idx # Uncomment to swap if needed
                 return None  # Or swap as above
 
             # 3. Extract the Segment
-            segment_points = simplified_points[start_idx: end_idx + 1]
+            segment_points = simplified_points[start_idx : end_idx + 1]
             N_segment = len(segment_points)
 
             if N_segment < 2:  # Should not happen if start_idx < end_idx, but safe check
@@ -720,14 +873,14 @@ def para2point(para, N_new, **kwargs):
             # 4. Reconstruct using the Segment via Arc-Length Parameterized Interpolation
             # Compute arc-length parameterization for the segment
             diffs_seg = np.diff(segment_points, axis=0)
-            segment_lengths_seg = np.sqrt(np.sum(diffs_seg ** 2, axis=1))
+            segment_lengths_seg = np.sqrt(np.sum(diffs_seg**2, axis=1))
             s_seg = np.concatenate(([0], np.cumsum(segment_lengths_seg)))
             total_length_seg = s_seg[-1]
             if total_length_seg < 1e-9:
                 t_segment_accurate = np.linspace(0, 1, N_segment, endpoint=True)
             else:
                 t_segment_accurate = s_seg / total_length_seg
-                t_segment_accurate[0] = 0.0;
+                t_segment_accurate[0] = 0.0
                 t_segment_accurate[-1] = 1.0  # Ensure bounds
 
             # Remove duplicates for interpolation robustness
@@ -743,22 +896,42 @@ def para2point(para, N_new, **kwargs):
 
             try:
                 # Choose interpolation kind (linear often good for RDP segments)
-                kind = 'linear'  # 'cubic' if len(t_segment_unique) >= 4 else 'linear'
+                kind = "linear"  # 'cubic' if len(t_segment_unique) >= 4 else 'linear'
 
-                interp_func_x = interp1d(t_segment_unique, segment_points_unique[:, 0], kind=kind, bounds_error=False,
-                                         fill_value="extrapolate")
-                interp_func_y = interp1d(t_segment_unique, segment_points_unique[:, 1], kind=kind, bounds_error=False,
-                                         fill_value="extrapolate")
+                interp_func_x = interp1d(
+                    t_segment_unique,
+                    segment_points_unique[:, 0],
+                    kind=kind,
+                    bounds_error=False,
+                    fill_value="extrapolate",
+                )
+                interp_func_y = interp1d(
+                    t_segment_unique,
+                    segment_points_unique[:, 1],
+                    kind=kind,
+                    bounds_error=False,
+                    fill_value="extrapolate",
+                )
                 result = np.column_stack([interp_func_x(t_new), interp_func_y(t_new)])
 
                 # Check for NaNs
                 if np.isnan(result).any():
                     # Optionally try linear fallback if cubic failed
-                    if kind == 'cubic':
-                        interp_func_x = interp1d(t_segment_unique, segment_points_unique[:, 0], kind='linear',
-                                                 bounds_error=False, fill_value="extrapolate")
-                        interp_func_y = interp1d(t_segment_unique, segment_points_unique[:, 1], kind='linear',
-                                                 bounds_error=False, fill_value="extrapolate")
+                    if kind == "cubic":
+                        interp_func_x = interp1d(
+                            t_segment_unique,
+                            segment_points_unique[:, 0],
+                            kind="linear",
+                            bounds_error=False,
+                            fill_value="extrapolate",
+                        )
+                        interp_func_y = interp1d(
+                            t_segment_unique,
+                            segment_points_unique[:, 1],
+                            kind="linear",
+                            bounds_error=False,
+                            fill_value="extrapolate",
+                        )
                         result = np.column_stack([interp_func_x(t_new), interp_func_y(t_new)])
                         if np.isnan(result).any():
                             return None  # Give up if linear also fails
@@ -776,7 +949,8 @@ def para2point(para, N_new, **kwargs):
     except Exception as e:
         return None
 
-def para2point_batch(trajs_array, N_new, method='rdp_k'):
+
+def para2point_batch(trajs_array, N_new, method="rdp_k"):
     """Convert a batch of parameterized trajectories back to point sequences.
 
     Args:
@@ -792,10 +966,10 @@ def para2point_batch(trajs_array, N_new, method='rdp_k'):
 
     for i in range(batch_size):
         para_dict = {
-            'method': method,
-            'simplified_points': trajs_array[i].reshape(-1, 2),
-            'K_actual': None,
-            'K_target': None
+            "method": method,
+            "simplified_points": trajs_array[i].reshape(-1, 2),
+            "K_actual": None,
+            "K_target": None,
         }
         reconstructed = para2point(para_dict, N_new=N_new, method_override=method)
         if reconstructed is None:
@@ -804,6 +978,7 @@ def para2point_batch(trajs_array, N_new, method='rdp_k'):
         batch_reconstructed.append(reconstructed)
 
     return np.array(batch_reconstructed)
+
 
 import matplotlib.pyplot as plt
 from pathlib import Path

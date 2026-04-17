@@ -9,17 +9,17 @@ class ConditionalTrajectoryVAEEncoder(nn.Module):
         super().__init__()
 
         # Get dimensions from config
-        if config['data']['parametrized']:
-            self.M = config['data']['parametrized_M']
+        if config["data"]["parametrized"]:
+            self.M = config["data"]["parametrized_M"]
         else:
-            self.M = config['data']['trajectory_length']
+            self.M = config["data"]["trajectory_length"]
 
         self.input_dim = self.M * 2
-        self.latent_dim = config['baseline']['model']['architecture']['latent_dim']
-        self.hidden_dim = config['baseline']['model']['architecture']['hidden_dim']
+        self.latent_dim = config["baseline"]["model"]["architecture"]["latent_dim"]
+        self.hidden_dim = config["baseline"]["model"]["architecture"]["hidden_dim"]
         self.condition_dim = condition_dim
 
-        if config['data']['od_finer'] == True:
+        if config["data"]["od_finer"] == True:
             self.input_dim = self.input_dim + 4
 
         # Encoder network
@@ -47,17 +47,17 @@ class ConditionalTrajectoryVAEDecoder(nn.Module):
         super().__init__()
 
         # Get dimensions from config
-        if config['data']['parametrized']:
-            self.M = config['data']['parametrized_M']
+        if config["data"]["parametrized"]:
+            self.M = config["data"]["parametrized_M"]
         else:
-            self.M = config['data']['trajectory_length']
+            self.M = config["data"]["trajectory_length"]
 
         self.input_dim = self.M * 2
-        self.latent_dim = config['baseline']['model']['architecture']['latent_dim']
-        self.hidden_dim = config['baseline']['model']['architecture']['hidden_dim']
+        self.latent_dim = config["baseline"]["model"]["architecture"]["latent_dim"]
+        self.hidden_dim = config["baseline"]["model"]["architecture"]["hidden_dim"]
         self.condition_dim = condition_dim
 
-        if config['data']['od_finer'] == True:
+        if config["data"]["od_finer"] == True:
             self.input_dim = self.input_dim + 4
 
         # Decoder network
@@ -80,30 +80,30 @@ class ConditionalTrajectoryVAE(nn.Module):
         self.config = config
 
         # Get dimensions from config
-        if config['data']['parametrized']:
-            self.M = config['data']['parametrized_M']
+        if config["data"]["parametrized"]:
+            self.M = config["data"]["parametrized_M"]
         else:
-            self.M = config['data']['trajectory_length']
+            self.M = config["data"]["trajectory_length"]
 
         self.input_dim = self.M * 2
-        self.latent_dim = config['baseline']['model']['architecture']['latent_dim']
-        self.hidden_dim = config['baseline']['model']['architecture']['hidden_dim']
-        self.beta = config['baseline']['training']['vae_config']['beta']
+        self.latent_dim = config["baseline"]["model"]["architecture"]["latent_dim"]
+        self.hidden_dim = config["baseline"]["model"]["architecture"]["hidden_dim"]
+        self.beta = config["baseline"]["training"]["vae_config"]["beta"]
 
-        if config['data']['od_finer'] == True:
+        if config["data"]["od_finer"] == True:
             self.input_dim = self.input_dim + 4
 
         # Determine if conditional from config
-        self.conditional = config.get('condition', {}).get('enabled', False)
+        self.conditional = config.get("condition", {}).get("enabled", False)
 
         # Get embedding of condition
         if self.conditional:
-            embedding_dim = config['baseline']['model']['architecture'].get('embedding_dim', self.hidden_dim)
+            embedding_dim = config["baseline"]["model"]["architecture"].get("embedding_dim", self.hidden_dim)
             self.condition_embedding = self._get_condition_embedding(
                 config,
                 embedding_dim=embedding_dim,
                 hidden_dim=self.hidden_dim,
-                dataset=dataset
+                dataset=dataset,
             )
             self.condition_dim = embedding_dim
         else:
@@ -114,22 +114,34 @@ class ConditionalTrajectoryVAE(nn.Module):
         self.decoder = ConditionalTrajectoryVAEDecoder(config, self.condition_dim)
 
         # Optimizer
-        lr = config['training']['learning_rate']
+        lr = config["training"]["learning_rate"]
         self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
 
     def _get_condition_embedding(self, config, embedding_dim, hidden_dim, dataset):
         """Get the appropriate condition embedding module based on config"""
-        embedding_type = config['condition']['embedding_type']
+        embedding_type = config["condition"]["embedding_type"]
         location_emb_dim = dataset.location_dim
 
-        if embedding_type == 'wide_and_deep':
-            return WideAndDeep(embedding_dim=embedding_dim, hidden_dim=hidden_dim,
-                               location_emb_dim=location_emb_dim, config=config)
-        elif embedding_type == 'simple_mlp':
-            return SimpleMLPEmb(input_dim=location_emb_dim, embedding_dim=embedding_dim, hidden_dim=hidden_dim)
+        if embedding_type == "wide_and_deep":
+            return WideAndDeep(
+                embedding_dim=embedding_dim,
+                hidden_dim=hidden_dim,
+                location_emb_dim=location_emb_dim,
+                config=config,
+            )
+        elif embedding_type == "simple_mlp":
+            return SimpleMLPEmb(
+                input_dim=location_emb_dim,
+                embedding_dim=embedding_dim,
+                hidden_dim=hidden_dim,
+            )
         else:
             # Default to SimpleMLPEmb
-            return SimpleMLPEmb(input_dim=location_emb_dim, embedding_dim=embedding_dim, hidden_dim=hidden_dim)
+            return SimpleMLPEmb(
+                input_dim=location_emb_dim,
+                embedding_dim=embedding_dim,
+                hidden_dim=hidden_dim,
+            )
 
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -145,7 +157,7 @@ class ConditionalTrajectoryVAE(nn.Module):
 
     def loss_function(self, recon_x, x, mu, logvar):
         # Reconstruction loss
-        recon_loss = F.mse_loss(recon_x, x, reduction='mean')
+        recon_loss = F.mse_loss(recon_x, x, reduction="mean")
 
         # KL divergence loss
         kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
@@ -169,21 +181,19 @@ class ConditionalTrajectoryVAE(nn.Module):
         recon_trajectories, mu, logvar = self.forward(real_trajectories, condition)
 
         # Compute loss
-        total_loss, recon_loss, kld_loss = self.loss_function(
-            recon_trajectories, real_trajectories, mu, logvar
-        )
+        total_loss, recon_loss, kld_loss = self.loss_function(recon_trajectories, real_trajectories, mu, logvar)
 
         # Backward pass
         total_loss.backward()
         self.optimizer.step()
 
         return {
-            'total_loss': total_loss.item(),
-            'recon_loss': recon_loss.item(),
-            'kld_loss': kld_loss.item()
+            "total_loss": total_loss.item(),
+            "recon_loss": recon_loss.item(),
+            "kld_loss": kld_loss.item(),
         }
 
-    def generate(self, n_samples, condition, device='cuda'):
+    def generate(self, n_samples, condition, device="cuda"):
         """Generate conditional samples for inference"""
         self.eval()
         with torch.no_grad():
@@ -201,14 +211,14 @@ class TrajectoryVAEEncoder(nn.Module):
         super().__init__()
 
         # Get dimensions from config
-        if config['data']['parametrized']:
-            self.M = config['data']['parametrized_M']
+        if config["data"]["parametrized"]:
+            self.M = config["data"]["parametrized_M"]
         else:
-            self.M = config['data']['trajectory_length']
+            self.M = config["data"]["trajectory_length"]
 
         self.input_dim = self.M * 2
-        self.latent_dim = config['baseline']['model']['architecture']['latent_dim']
-        self.hidden_dim = config['baseline']['model']['architecture']['hidden_dim']
+        self.latent_dim = config["baseline"]["model"]["architecture"]["latent_dim"]
+        self.hidden_dim = config["baseline"]["model"]["architecture"]["hidden_dim"]
 
         # Encoder network
         self.encoder = nn.Sequential(
@@ -234,14 +244,14 @@ class TrajectoryVAEDecoder(nn.Module):
         super().__init__()
 
         # Get dimensions from config
-        if config['data']['parametrized']:
-            self.M = config['data']['parametrized_M']
+        if config["data"]["parametrized"]:
+            self.M = config["data"]["parametrized_M"]
         else:
-            self.M = config['data']['trajectory_length']
+            self.M = config["data"]["trajectory_length"]
 
         self.input_dim = self.M * 2
-        self.latent_dim = config['baseline']['model']['architecture']['latent_dim']
-        self.hidden_dim = config['baseline']['model']['architecture']['hidden_dim']
+        self.latent_dim = config["baseline"]["model"]["architecture"]["latent_dim"]
+        self.hidden_dim = config["baseline"]["model"]["architecture"]["hidden_dim"]
 
         # Decoder network
         self.decoder = nn.Sequential(
@@ -262,20 +272,20 @@ class TrajectoryVAE(nn.Module):
         self.config = config
 
         # Get dimensions from config
-        if config['data']['parametrized']:
-            self.M = config['data']['parametrized_M']
+        if config["data"]["parametrized"]:
+            self.M = config["data"]["parametrized_M"]
         else:
-            self.M = config['data']['trajectory_length']
+            self.M = config["data"]["trajectory_length"]
 
-        self.latent_dim = config['baseline']['model']['architecture']['latent_dim']
-        self.beta = config['baseline']['training']['vae_config']['beta']
+        self.latent_dim = config["baseline"]["model"]["architecture"]["latent_dim"]
+        self.beta = config["baseline"]["training"]["vae_config"]["beta"]
 
         # Initialize encoder and decoder
         self.encoder = TrajectoryVAEEncoder(config)
         self.decoder = TrajectoryVAEDecoder(config)
 
         # Optimizer
-        lr = config['training']['learning_rate']
+        lr = config["training"]["learning_rate"]
         self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
 
     def reparameterize(self, mu, logvar):
@@ -291,7 +301,7 @@ class TrajectoryVAE(nn.Module):
 
     def loss_function(self, recon_x, x, mu, logvar):
         # Reconstruction loss
-        recon_loss = F.mse_loss(recon_x, x, reduction='mean')
+        recon_loss = F.mse_loss(recon_x, x, reduction="mean")
 
         # KL divergence loss
         kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
@@ -315,21 +325,19 @@ class TrajectoryVAE(nn.Module):
         recon_trajectories, mu, logvar = self.forward(real_trajectories)
 
         # Compute loss
-        total_loss, recon_loss, kld_loss = self.loss_function(
-            recon_trajectories, real_trajectories, mu, logvar
-        )
+        total_loss, recon_loss, kld_loss = self.loss_function(recon_trajectories, real_trajectories, mu, logvar)
 
         # Backward pass
         total_loss.backward()
         self.optimizer.step()
 
         return {
-            'total_loss': total_loss.item(),
-            'recon_loss': recon_loss.item(),
-            'kld_loss': kld_loss.item()
+            "total_loss": total_loss.item(),
+            "recon_loss": recon_loss.item(),
+            "kld_loss": kld_loss.item(),
         }
 
-    def generate(self, n_samples, device='cuda'):
+    def generate(self, n_samples, device="cuda"):
         """Generate samples for inference"""
         self.eval()
         with torch.no_grad():

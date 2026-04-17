@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 
+
 def flow_matching_loss(pred_v, target_v):
     """
     Compute the flow matching loss
@@ -13,6 +14,7 @@ def flow_matching_loss(pred_v, target_v):
         loss: Mean squared error between predicted and target velocity
     """
     return F.mse_loss(pred_v, target_v)
+
 
 def conditional_flow_matching_loss(pred_v, target_v, condition):
     """
@@ -28,6 +30,7 @@ def conditional_flow_matching_loss(pred_v, target_v, condition):
     """
     # Basic implementation - can be extended for more complex conditioning
     return F.mse_loss(pred_v, target_v)
+
 
 def wasserstein_distance_loss(generated, real):
     """

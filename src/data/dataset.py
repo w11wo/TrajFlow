@@ -9,6 +9,7 @@ import jismesh.utils as ju
 import src.utils.jismesh_v2.jismesh.utils as ju_v2
 from tqdm import tqdm
 
+
 def map_two_columns_to_shared_range(input_array):
     # Flatten the array to get all integers in one list
     all_integers = input_array.flatten()
@@ -57,7 +58,7 @@ def standardize_traj_start_end_scaling(traj, epsilon=1e-8):
     s = np.linalg.norm(vector_se)
 
     # --- 2. Determine final scale factor, using fallback if s is too small ---
-    use_fallback = (s < epsilon)
+    use_fallback = s < epsilon
 
     if use_fallback:
         # Fallback: Use max standard deviation across dimensions
@@ -96,7 +97,7 @@ def standardize_traj_start_end_scaling(traj, epsilon=1e-8):
 
 
 class FlowMatchingDataset(Dataset):
-    def __init__(self, config, mode='train'):
+    def __init__(self, config, mode="train"):
         """
         Flow Matching dataset implementation
 
@@ -105,45 +106,48 @@ class FlowMatchingDataset(Dataset):
             mode: 'train' or 'eval'
         """
         super().__init__()
-        self.traj_length = config['data']['trajectory_length']
+        self.traj_length = config["data"]["trajectory_length"]
         self.traj_dim = self.traj_length * 2
-        self.dataset_size = config['data']['sample_count']
-        self.dataset_type = config['data']['dataset_type']
-        self.output_dir = config['project']['output_dir']
+        self.dataset_size = config["data"]["sample_count"]
+        self.dataset_type = config["data"]["dataset_type"]
+        self.output_dir = config["project"]["output_dir"]
 
         if self.dataset_type in {"didi", "open_source", "bwtraj"}:
             self._load_trajectory_data(config)
+        elif self.dataset_type == "HOSER":
+            self._load_hoser_data(config, mode)
         elif self.dataset_type == "naive_circle":
             self._create_synthetic_data()
         else:
             raise ValueError(
-                f"Unknown dataset type: {self.dataset_type}. "
-                "Use 'didi' (or legacy 'bwtraj') for open-source data."
+                f"Unknown dataset type: {self.dataset_type}. " "Use 'didi' (or legacy 'bwtraj') for open-source data."
             )
 
         # Add support for conditional flow
-        self.conditional = config.get('condition', {}).get('enabled', False)
+        self.conditional = config.get("condition", {}).get("enabled", False)
         if self.conditional:
-            self.condition_type = config['condition']['condition_type']
+            self.condition_type = config["condition"]["condition_type"]
             self._prepare_conditions()
 
-        if config['data']['parametrized']:
+        if config["data"]["parametrized"]:
             # Reuse cached parameterized trajectories when available.
             processed_data_path = os.path.join(
                 os.path.dirname(self.input_folder),
                 f"processed_coeffs_{config['data']['region']}_"
                 f"{config['data']['parametrized_method']}_"
-                f"{config['data']['parametrized_M']}.npy"
+                f"{config['data']['parametrized_M']}.npy",
             )
             if os.path.exists(processed_data_path):
                 print(f"Loading pre-processed coefficients from {processed_data_path}")
                 self.coffs = np.load(processed_data_path)
-                self.traj_segments = self.coffs[:self.dataset_size]
+                self.traj_segments = self.coffs[: self.dataset_size]
             else:
-                self._convert_to_coefficients(para_M=config['data']['parametrized_M'],
-                                              method=config['data']['parametrized_method'])
+                self._convert_to_coefficients(
+                    para_M=config["data"]["parametrized_M"],
+                    method=config["data"]["parametrized_method"],
+                )
             # Cache the full-dataset coefficients next to the source data.
-            if config['data']['sample_count'] == -1:
+            if config["data"]["sample_count"] == -1:
                 print(f"Saving processed coefficients to {processed_data_path}")
                 os.makedirs(os.path.dirname(processed_data_path), exist_ok=True)
                 np.save(processed_data_path, self.coffs)
@@ -153,41 +157,37 @@ class FlowMatchingDataset(Dataset):
             pass
 
     def _prepare_conditions(self):
-           """Prepare conditions based on configuration"""
-           if self.condition_type == 'od':
-               self.conditions = self.all_head
-               # Because the sampled data is not the same as the original data, we need to record the OD mapping dict
-               # Map the last two columns (o,d) to a shared range
-               self.conditions[:, 6:8], self.onehot_mapping_dict, max_unique_length = (
-                   map_two_columns_to_shared_range(self.conditions[:, 6:8]))
-               self.conditions = self.conditions[:, 6:8]
-               self.location_dim = max_unique_length
-               # revalue the value of the grid_mapping_dict
-               # replace the key with the value of the onehot_mapping_dict
-               # drop the items that are not in the onehot_mapping_dict
-               cr_sample_grid_mapping_dict = {}
-               for key, value in self.onehot_mapping_dict.items():
-                   cr_sample_grid_mapping_dict[value] = self.grid_mapping_dict[key]
-               self.cr_sample_grid_mapping_dict = cr_sample_grid_mapping_dict
-           elif self.condition_type == 'full':
-               self.conditions = self.all_head
-               # Because the sampled data is not the same as the original data, we need to record the OD mapping dict
-               # Map the last two columns (o,d) to a shared range
-               self.conditions[:, 6:8], self.onehot_mapping_dict, max_unique_length = (
-                   map_two_columns_to_shared_range(self.conditions[:, 6:8]))
-               self.location_dim = max_unique_length
-               # revalue the value of the grid_mapping_dict
-               # replace the key with the value of the onehot_mapping_dict
-               # drop the items that are not in the onehot_mapping_dict
-               cr_sample_grid_mapping_dict = {}
-               for key, value in self.onehot_mapping_dict.items():
-                   cr_sample_grid_mapping_dict[value] = self.grid_mapping_dict[key]
-               self.cr_sample_grid_mapping_dict = cr_sample_grid_mapping_dict
-           else:
-               # Default empty conditions
-               self.conditions = np.zeros((self.dataset_size, self.condition_dim))
-           # Convert to tensor
-           self.conditions = torch.FloatTensor(self.conditions)
+        """Prepare conditions based on configuration"""
+        if self.condition_type == "od":
+            self.conditions = self.all_head
+            # Because the sampled data is not the same as the original data, we need to record the OD mapping dict
+            # Map the last two columns (o,d) to a shared range
+            self.conditions[:, 6:8], self.onehot_mapping_dict, max_unique_length = map_two_columns_to_shared_range(
+                self.conditions[:, 6:8]
+            )
+            self.conditions = self.conditions[:, 6:8]
+            self.location_dim = max_unique_length
+            # revalue the value of the grid_mapping_dict
+            # replace the key with the value of the onehot_mapping_dict
+            # drop the items that are not in the onehot_mapping_dict
+            self.cr_sample_grid_mapping_dict = {value: int(key) for key, value in self.onehot_mapping_dict.items()}
+        elif self.condition_type == "full":
+            self.conditions = self.all_head
+            # Because the sampled data is not the same as the original data, we need to record the OD mapping dict
+            # Map the last two columns (o,d) to a shared range
+            self.conditions[:, 6:8], self.onehot_mapping_dict, max_unique_length = map_two_columns_to_shared_range(
+                self.conditions[:, 6:8]
+            )
+            self.location_dim = max_unique_length
+            # revalue the value of the grid_mapping_dict
+            # replace the key with the value of the onehot_mapping_dict
+            # drop the items that are not in the onehot_mapping_dict
+            self.cr_sample_grid_mapping_dict = {value: int(key) for key, value in self.onehot_mapping_dict.items()}
+        else:
+            # Default empty conditions
+            self.conditions = np.zeros((self.dataset_size, self.condition_dim))
+        # Convert to tensor
+        self.conditions = torch.FloatTensor(self.conditions)
 
     def _load_trajectory_data(self, config):
         """Load trajectory data from open-source dataset folders."""
@@ -196,17 +196,17 @@ class FlowMatchingDataset(Dataset):
         # Define dataset folders
         PROJ_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         FOLDERS = {
-            'Chengdu': f'{PROJ_PATH}/data/DiDiTaxi_Chengdu_traj',
-            'XiAn': f'{PROJ_PATH}/data/DiDiTaxi_XiAn_traj',
+            "Chengdu": f"{PROJ_PATH}/data/DiDiTaxi_Chengdu_traj",
+            "XiAn": f"{PROJ_PATH}/data/DiDiTaxi_XiAn_traj",
         }
-        custom_folder = config['data'].get('dataset_folder', '')
+        custom_folder = config["data"].get("dataset_folder", "")
         if custom_folder:
             if os.path.isabs(custom_folder):
                 self.input_folder = custom_folder
             else:
                 self.input_folder = os.path.join(PROJ_PATH, custom_folder)
         else:
-            region = config['data']['region']
+            region = config["data"]["region"]
             if region not in FOLDERS:
                 raise ValueError(f"Unsupported open-source region: {region}. Use Chengdu or XiAn.")
             self.input_folder = FOLDERS[region]
@@ -217,55 +217,71 @@ class FlowMatchingDataset(Dataset):
                 fallback_candidates = [p for p in fallback_candidates if os.path.isdir(p)]
                 if fallback_candidates:
                     self.input_folder = sorted(fallback_candidates)[0]
-        self.grid_encoding = 'jismesh'
+        self.grid_encoding = "jismesh"
         self.grid_metadata = {}
-        (self.all_head, self.traj_mean, self.traj_std, self.lengths,
-         self.cond_mean, self.cond_std, self.traj_segments, self.grid_mapping_dict) = PrepareDataset.loadExistingData(
-            self.input_folder, resample_length=self.traj_length)
+        (
+            self.all_head,
+            self.traj_mean,
+            self.traj_std,
+            self.lengths,
+            self.cond_mean,
+            self.cond_std,
+            self.traj_segments,
+            self.grid_mapping_dict,
+        ) = PrepareDataset.loadExistingData(self.input_folder, resample_length=self.traj_length)
 
-        meta_path = os.path.join(self.input_folder, 'grid_meta.json')
+        meta_path = os.path.join(self.input_folder, "grid_meta.json")
         if os.path.exists(meta_path):
-            with open(meta_path, 'r', encoding='utf-8') as f:
+            with open(meta_path, "r", encoding="utf-8") as f:
                 try:
                     self.grid_metadata = json.load(f)
                 except json.JSONDecodeError:
                     self.grid_metadata = {}
-            self.grid_encoding = self.grid_metadata.get('encoding', 'jismesh')
-        elif config['data']['region'] in ('Chengdu', 'XiAn'):
-            precision = config['data'].get('geohash_precision', 6)
-            self.grid_encoding = 'geohash'
-            self.grid_metadata = {'encoding': 'geohash', 'geohash_precision': precision}
+            self.grid_encoding = self.grid_metadata.get("encoding", "jismesh")
+        elif config["data"]["region"] in ("Chengdu", "XiAn"):
+            precision = config["data"].get("geohash_precision", 6)
+            self.grid_encoding = "geohash"
+            self.grid_metadata = {"encoding": "geohash", "geohash_precision": precision}
 
         # Limit dataset size based on available data
         if self.dataset_size == -1:
             self.dataset_size = len(self.traj_segments)
         else:
             self.dataset_size = min(self.dataset_size, len(self.traj_segments))
-        self.traj_segments = self.traj_segments[:self.dataset_size]
-        self.all_head = self.all_head[:self.dataset_size]
+        self.traj_segments = self.traj_segments[: self.dataset_size]
+        self.all_head = self.all_head[: self.dataset_size]
 
         # get the odfiner in config, if not, set as False
-        self.od_finer = config['data'].get('od_finer', False)
+        self.od_finer = config["data"].get("od_finer", False)
         if self.od_finer:
             # Get the inner location within OD mesh
             self.all_od_finer_paras = np.zeros((self.dataset_size, 4))  # [lon, lat, lon, lat]
             for i in range(self.dataset_size):
                 # Get the first and last points of the trajectory
                 start_point = self.traj_segments[i][0]  # First point coordinates [x, y]
-                end_point = self.traj_segments[i][-1]   # Last point coordinates [x, y]
+                end_point = self.traj_segments[i][-1]  # Last point coordinates [x, y]
                 # Convert to actual coordinates by * traj_std + traj_mean
                 start_point = start_point * self.traj_std + self.traj_mean
                 end_point = end_point * self.traj_std + self.traj_mean
                 # Calculate relative position within origin and destination grids
-                meshcode, o_lat_mult, o_lon_mult = ju_v2.to_meshcode(start_point[0], start_point[1], 3, return_multipliers=True)
-                meshcode, d_lat_mult, d_lon_mult = ju_v2.to_meshcode(end_point[0], end_point[1], 3, return_multipliers=True)
+                meshcode, o_lat_mult, o_lon_mult = ju_v2.to_meshcode(
+                    start_point[0], start_point[1], 3, return_multipliers=True
+                )
+                meshcode, d_lat_mult, d_lon_mult = ju_v2.to_meshcode(
+                    end_point[0], end_point[1], 3, return_multipliers=True
+                )
                 # Store relative positions (between 0.0 and 1.0)
-                self.all_od_finer_paras[i] = [o_lat_mult, o_lon_mult,d_lat_mult, d_lon_mult]  # Or store both O&D if needed
+                self.all_od_finer_paras[i] = [
+                    o_lat_mult,
+                    o_lon_mult,
+                    d_lat_mult,
+                    d_lon_mult,
+                ]  # Or store both O&D if needed
         else:
             pass
 
         # Normalize trajectories
-        if config['data']['norm1by1']:
+        if config["data"]["norm1by1"]:
             # Store the original data before standardization
             self.traj_segments_before_stdize = self.traj_segments.copy()
             # Standardize data
@@ -273,12 +289,44 @@ class FlowMatchingDataset(Dataset):
         else:
             pass
 
+    def _load_hoser_data(self, config, mode):
+        from data_utils import PrepareDataset
+
+        PROJ_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.input_folder = os.path.join(PROJ_PATH, config["data"]["dataset_folder"])
+
+        self.grid_metadata = {}
+        (
+            self.all_head,
+            self.traj_mean,
+            self.traj_std,
+            self.lengths,
+            self.cond_mean,
+            self.cond_std,
+            self.traj_segments,
+            self.grid_mapping_dict,
+        ) = PrepareDataset.loadExistingData(self.input_folder, resample_length=self.traj_length, mode=mode)
+
+        with open(os.path.join(self.input_folder, "grid_meta.json"), "r", encoding="utf-8") as f:
+            self.grid_metadata = json.load(f)
+        self.grid_encoding = self.grid_metadata["encoding"]
+
+        self.dataset_size = len(self.traj_segments)
+
+        # Normalize trajectories
+        if config["data"]["norm1by1"]:
+            # Store the original data before standardization
+            self.traj_segments_before_stdize = self.traj_segments.copy()
+            # Standardize data
+            self.standardize_trajectories_preserve_aspect()
+
     def _standardize_trajectories(self):
         """Standardize trajectory data"""
         # Apply standardization for each trajectory
         for i in range(self.dataset_size):
-            self.traj_segments[i] = (self.traj_segments[i] -
-                                     self.traj_segments[i].mean(axis=0)) / self.traj_segments[i].std(axis=0)
+            self.traj_segments[i] = (self.traj_segments[i] - self.traj_segments[i].mean(axis=0)) / self.traj_segments[
+                i
+            ].std(axis=0)
 
     def _standardize_trajectories_v3(self):
         """
@@ -315,7 +363,7 @@ class FlowMatchingDataset(Dataset):
 
             # Step 2: Calculate the overall standard deviation (preserve aspect ratio)
             # Overall std is based on the distance of points from the center
-            std = np.sqrt(np.mean(np.sum(centered_traj ** 2, axis=1)))  # Scalar
+            std = np.sqrt(np.mean(np.sum(centered_traj**2, axis=1)))  # Scalar
 
             # Handle cases where std is very small to avoid division by zero
             epsilon = 1e-8
@@ -329,7 +377,6 @@ class FlowMatchingDataset(Dataset):
             standardized_segments.append(standardized_traj)
 
         self.traj_segments = standardized_segments
-
 
     def _create_synthetic_data(self):
         """Create synthetic circular data"""
@@ -347,42 +394,42 @@ class FlowMatchingDataset(Dataset):
         # Convert to DCT coefficients
         dct_coeffs = []
         for i in range(self.dataset_size):
-            coeff = point2para(points_data[i].numpy(), method='dct')
+            coeff = point2para(points_data[i].numpy(), method="dct")
             dct_coeffs.append(coeff)
 
         self.data = torch.FloatTensor(np.array(dct_coeffs))  # Shape: [dataset_size, M, 2]
 
     def _process_trajectory(self, traj, para_M, method):
         """Process a single trajectory - worker function for multiprocessing"""
-        if method == 'rdp_k':
+        if method == "rdp_k":
             para_dict = point2para(traj, K=para_M, method=method)
             if para_dict is not None:
-                return para_dict['simplified_points']
+                return para_dict["simplified_points"]
             else:
                 return np.zeros((para_M, 2))  # Fallback if parameterization fails
-        elif method == 'rdp_k_withod':
+        elif method == "rdp_k_withod":
             # Special case for methods that need start/end point info
             para_dict = {
-                'simplified_points': traj,
-                'start_point': traj[0],
-                'end_point': traj[-1]
+                "simplified_points": traj,
+                "start_point": traj[0],
+                "end_point": traj[-1],
             }
             para_dict = point2para(traj, K=para_M, method=method, **para_dict)
             if para_dict is not None:
-                return para_dict['simplified_points']
+                return para_dict["simplified_points"]
             else:
                 return np.zeros((para_M, 2))
         else:
             print(f"Warning: Using {method} for parameterization")
             return point2para(traj, method=method)
 
-    def _convert_to_coefficients(self, para_M=10, method='dct'):
+    def _convert_to_coefficients(self, para_M=10, method="dct"):
         """Convert trajectory points to coefficients using multiprocessing for improved performance"""
         import multiprocessing as mp
         from functools import partial
 
         # Determine number of processes (use half of available cores)
-        num_processes = max(1, mp.cpu_count()//2)
+        num_processes = max(1, mp.cpu_count() // 2)
         print(f"Converting trajectories using {num_processes} processes...")
 
         # Create partial function with fixed parameters
@@ -391,11 +438,13 @@ class FlowMatchingDataset(Dataset):
         # Process in batches using multiprocessing Pool
         coeffs = np.zeros((self.dataset_size, para_M, 2))
         with mp.Pool(processes=num_processes) as pool:
-            results = list(tqdm(
-                pool.imap(process_func, self.traj_segments, chunksize=1000),
-                total=self.dataset_size,
-                desc=f"Parameterizing with {method}"
-            ))
+            results = list(
+                tqdm(
+                    pool.imap(process_func, self.traj_segments, chunksize=1000),
+                    total=self.dataset_size,
+                    desc=f"Parameterizing with {method}",
+                )
+            )
 
         # Collect results
         for i, result in enumerate(results):
@@ -410,20 +459,20 @@ class FlowMatchingDataset(Dataset):
         return self.dataset_size
 
     def __getitem__(self, idx):
-                    if not isinstance(idx, torch.Tensor):
-                        pass  # idx = idx.item()
+        if not isinstance(idx, torch.Tensor):
+            pass  # idx = idx.item()
 
-                    if self.conditional:
-                        if hasattr(self, 'od_finer') and self.od_finer:
-                            # Concatenate trajectory segments and od_finer parameters
-                            traj_segment = torch.Tensor(self.traj_segments[idx])
-                            od_finer_params = torch.Tensor(self.all_od_finer_paras[idx])
-                            # Combine trajectory with OD finer parameters
-                            combined_data = torch.cat([traj_segment.view(-1), od_finer_params], dim=0)
-                            # Return combined data and conditions
-                            return combined_data, torch.Tensor(self.conditions[idx])
-                        else:
-                            # Return just trajectory and conditions
-                            return torch.Tensor(self.traj_segments[idx]), torch.Tensor(self.conditions[idx])
-                    else:
-                        return torch.Tensor(self.traj_segments[idx])  # Flatten to [M*2] for model input
+        if self.conditional:
+            if hasattr(self, "od_finer") and self.od_finer:
+                # Concatenate trajectory segments and od_finer parameters
+                traj_segment = torch.Tensor(self.traj_segments[idx])
+                od_finer_params = torch.Tensor(self.all_od_finer_paras[idx])
+                # Combine trajectory with OD finer parameters
+                combined_data = torch.cat([traj_segment.view(-1), od_finer_params], dim=0)
+                # Return combined data and conditions
+                return combined_data, torch.Tensor(self.conditions[idx])
+            else:
+                # Return just trajectory and conditions
+                return torch.Tensor(self.traj_segments[idx]), torch.Tensor(self.conditions[idx])
+        else:
+            return torch.Tensor(self.traj_segments[idx])  # Flatten to [M*2] for model input

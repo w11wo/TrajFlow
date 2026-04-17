@@ -28,3 +28,5 @@ analysis_outputs/
 # IDE
 .idea/
 .vscode/
+
+notebooks/

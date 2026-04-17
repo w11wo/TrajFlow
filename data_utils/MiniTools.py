@@ -1,4 +1,4 @@
-__author__ = 'Li Peiran'
+__author__ = "Li Peiran"
 
 import os
 import numpy as np
@@ -7,6 +7,7 @@ import torch
 import scipy.stats
 import pygeohash as pgh
 import chardet
+
 
 def getFilePath(root_path, file_list, dir_list=None, target_ext=None):
     if dir_list is None:
@@ -32,23 +33,25 @@ def normMinMaxAxis1(data):
     _range = np.max(data, axis=1) - np.min(data, axis=1)
     return (data - np.min(data, axis=1)[:, None]) / _range[:, None]
 
+
 def normSum(data):
     _sum = np.sum(data)
-    return np.nan_to_num(data / _sum) #trans the nan to zero
+    return np.nan_to_num(data / _sum)  # trans the nan to zero
 
 
 def normSumAxis1(data):
     _sum = np.sum(data, axis=1)
-    return np.nan_to_num(data / _sum[:, None]) #trans the nan to zero
+    return np.nan_to_num(data / _sum[:, None])  # trans the nan to zero
+
 
 def normSum_Tensor(data):
     _sum = data.sum()
-    return data / _sum #trans the nan to zero
+    return data / _sum  # trans the nan to zero
+
 
 def normSumAxis1_Tensor(data):
     _sum = data.sum(axis=1)
-    return data / _sum[:, None] #trans the nan to zero
-
+    return data / _sum[:, None]  # trans the nan to zero
 
 
 def numpyMSE(arr1, arr2):
@@ -62,7 +65,7 @@ def numpyMAE(arr1, arr2):
 def ifFolderExistThenCreate(dir):
     if not os.path.exists(dir):
         os.makedirs(dir)
-        print('Create Folder: %s' % dir)
+        print("Create Folder: %s" % dir)
     return 1
 
 
@@ -78,11 +81,11 @@ def savePKL(obj, name):
     """
     Save data as pickle file.
     """
-    if name[-4:] == '.pkl':
-        with open(name, 'wb') as f:
+    if name[-4:] == ".pkl":
+        with open(name, "wb") as f:
             pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
     else:
-        with open(name + '.pkl', 'wb') as f:
+        with open(name + ".pkl", "wb") as f:
             pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
 
 
@@ -99,20 +102,20 @@ def loadPKL(name):
 
         def find_class(self, module, name):
             # Handle NumPy 2.x -> 1.x: remap numpy._core to numpy.core
-            if module.startswith('numpy._core'):
-                module = module.replace('numpy._core', 'numpy.core')
+            if module.startswith("numpy._core"):
+                module = module.replace("numpy._core", "numpy.core")
             # Handle NumPy 1.x -> 2.x: remap numpy.core to numpy._core
-            elif module.startswith('numpy.core') and hasattr(np, '_core'):
-                module = module.replace('numpy.core', 'numpy._core')
+            elif module.startswith("numpy.core") and hasattr(np, "_core"):
+                module = module.replace("numpy.core", "numpy._core")
 
             try:
                 return super().find_class(module, name)
             except (AttributeError, ModuleNotFoundError):
                 # Fallback: try original module path if remapping failed
-                if 'numpy._core' in module:
-                    fallback_module = module.replace('numpy._core', 'numpy.core')
+                if "numpy._core" in module:
+                    fallback_module = module.replace("numpy._core", "numpy.core")
                 else:
-                    fallback_module = module.replace('numpy.core', 'numpy._core')
+                    fallback_module = module.replace("numpy.core", "numpy._core")
 
                 try:
                     return super().find_class(fallback_module, name)
@@ -121,19 +124,21 @@ def loadPKL(name):
                     raise
 
     try:
-        with open(name, 'rb') as f:
+        with open(name, "rb") as f:
             return NumpyCompatUnpickler(f).load()
     except ValueError as e:
-        if 'unsupported pickle protocol' in str(e):
+        if "unsupported pickle protocol" in str(e):
             try:
                 import pickle5
-                with open(name, 'rb') as f:
+
+                with open(name, "rb") as f:
+
                     class Pickle5CompatUnpickler(pickle5.Unpickler):
                         def find_class(self, module, name):
-                            if module.startswith('numpy._core'):
-                                module = module.replace('numpy._core', 'numpy.core')
-                            elif module.startswith('numpy.core') and hasattr(np, '_core'):
-                                module = module.replace('numpy.core', 'numpy._core')
+                            if module.startswith("numpy._core"):
+                                module = module.replace("numpy._core", "numpy.core")
+                            elif module.startswith("numpy.core") and hasattr(np, "_core"):
+                                module = module.replace("numpy.core", "numpy._core")
                             return super().find_class(module, name)
 
                     return Pickle5CompatUnpickler(f).load()
@@ -151,20 +156,26 @@ def loadPKL(name):
         print(f"Current NumPy version: {np.__version__}")
         print("Consider regenerating the dataset with the current NumPy version.")
         return None
+
+
 def get_encoding(filename):
     """Return the detected file encoding."""
-    with open(filename, 'rb') as f:
-        return chardet.detect(f.read())['encoding']
+    with open(filename, "rb") as f:
+        return chardet.detect(f.read())["encoding"]
+
 
 def lpVector2xyz(lp_list, lp_format):
 
     # 1. from lpVector to lp treeIndex
     from FastLabeling.NFM import lpVector2treeIndex
+
     nfm_list = lpVector2treeIndex(lp_list, lp_format)
 
     # 2. from treeIndex to xyz point
     from FastLabeling.NFM import nfm
+
     return nfm(nfm_list)
+
 
 # Function to calculate distance between two latitude and longitude points
 def haversine_distance(lat1, lon1, lat2, lon2):
@@ -181,15 +192,18 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     r = 6371  # Radius of earth in kilometers
     return c * r
 
+
 def restartMongodb(db_path, log_path, port):
     import subprocess
-    mongod_path = 'mongod'
+
+    mongod_path = "mongod"
     command = f"{mongod_path} --dbpath {db_path} --logpath {log_path} --port {port}"
     try:
         proc = subprocess.Popen(command.split())
         print("MongoDB has been started successfully.")
     except Exception as e:
         print(f"Failed to start MongoDB: {e}")
+
 
 def binary_to_geohash(binary_array):
     """
@@ -200,15 +214,16 @@ def binary_to_geohash(binary_array):
     geohash_int = int("".join(map(str, binary_array.astype(int))), 2)
 
     # Convert integer to base32 string
-    base32_map = '0123456789bcdefghjkmnpqrstuvwxyz'
-    geohash_str = ''
+    base32_map = "0123456789bcdefghjkmnpqrstuvwxyz"
+    geohash_str = ""
     while geohash_int > 0:
         geohash_str = base32_map[geohash_int % 32] + geohash_str
         geohash_int //= 32
 
     return geohash_str
 
-def getRangeByGeohash(geohash_0,geohash_d,traj_mean,traj_std):
+
+def getRangeByGeohash(geohash_0, geohash_d, traj_mean, traj_std):
     # decode the geohash to lat/lon by 0,1 format
     geohash_0 = binary_to_geohash(geohash_0)
     geohash_d = binary_to_geohash(geohash_d)
@@ -225,11 +240,42 @@ def getRangeByGeohash(geohash_0,geohash_d,traj_mean,traj_std):
     lon_max = (lon_max - traj_mean[1]) / traj_std[1]
     return lat_min, lon_min, lat_max, lon_max
 
+
 def geohash_to_binary(geohash):
-    base32_map = {'0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
-                  'b': 10, 'c': 11, 'd': 12, 'e': 13, 'f': 14, 'g': 15, 'h': 16, 'j': 17, 'k': 18,
-                  'm': 19, 'n': 20, 'p': 21, 'q': 22, 'r': 23, 's': 24, 't': 25, 'u': 26, 'v': 27,
-                  'w': 28, 'x': 29, 'y': 30, 'z': 31}
+    base32_map = {
+        "0": 0,
+        "1": 1,
+        "2": 2,
+        "3": 3,
+        "4": 4,
+        "5": 5,
+        "6": 6,
+        "7": 7,
+        "8": 8,
+        "9": 9,
+        "b": 10,
+        "c": 11,
+        "d": 12,
+        "e": 13,
+        "f": 14,
+        "g": 15,
+        "h": 16,
+        "j": 17,
+        "k": 18,
+        "m": 19,
+        "n": 20,
+        "p": 21,
+        "q": 22,
+        "r": 23,
+        "s": 24,
+        "t": 25,
+        "u": 26,
+        "v": 27,
+        "w": 28,
+        "x": 29,
+        "y": 30,
+        "z": 31,
+    }
 
     base10 = 0
     for char in geohash:

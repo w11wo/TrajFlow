@@ -4,8 +4,10 @@ import torch.nn.functional as F
 import numpy as np
 import os
 import math
+
+
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-#====================================Utils for model=============================================
+# ====================================Utils for model=============================================
 class Dict2Obj:
     def __init__(self, dictionary):
         """Convert a dictionary to a class with attribute access"""
@@ -14,14 +16,17 @@ class Dict2Obj:
                 setattr(self, key, Dict2Obj(value))
             else:
                 setattr(self, key, value)
+
+
 def Normalize(in_channels):
-    return torch.nn.GroupNorm(num_groups=32,
-                              num_channels=in_channels,
-                              eps=1e-6,
-                              affine=True)
+    return torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+
+
 def nonlinearity(x):
     # swish
     return x * torch.sigmoid(x)
+
+
 def get_timestep_embedding(timesteps, embedding_dim, diffusion=False):
 
     if diffusion:
@@ -46,9 +51,9 @@ def get_timestep_embedding(timesteps, embedding_dim, diffusion=False):
         dim = embedding_dim
         max_period = 10000
         half = dim // 2
-        freqs = torch.exp(
-            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
-        ).to(device=timesteps.device)
+        freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
+            device=timesteps.device
+        )
         args = timesteps[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
@@ -56,6 +61,7 @@ def get_timestep_embedding(timesteps, embedding_dim, diffusion=False):
         else:
             emb = embedding
     return emb
+
 
 class Attention(nn.Module):
     def __init__(self, embedding_dim):
@@ -68,21 +74,17 @@ class Attention(nn.Module):
         # apply softmax along the attributes dimension
         weights = F.softmax(weights, dim=1)
         return weights
+
+
 class Upsample(nn.Module):
     def __init__(self, in_channels, with_conv=True):
         super().__init__()
         self.with_conv = with_conv
         if self.with_conv:
-            self.conv = torch.nn.Conv1d(in_channels,
-                                        in_channels,
-                                        kernel_size=3,
-                                        stride=1,
-                                        padding=1)
+            self.conv = torch.nn.Conv1d(in_channels, in_channels, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x):
-        x = torch.nn.functional.interpolate(x,
-                                            scale_factor=2.0,
-                                            mode="nearest")
+        x = torch.nn.functional.interpolate(x, scale_factor=2.0, mode="nearest")
         if self.with_conv:
             x = self.conv(x)
         return x
@@ -94,11 +96,7 @@ class Downsample(nn.Module):
         self.with_conv = with_conv
         if self.with_conv:
             # no asymmetric padding in torch conv, must do it ourselves
-            self.conv = torch.nn.Conv1d(in_channels,
-                                        in_channels,
-                                        kernel_size=3,
-                                        stride=2,
-                                        padding=0)
+            self.conv = torch.nn.Conv1d(in_channels, in_channels, kernel_size=3, stride=2, padding=0)
 
     def forward(self, x):
         if self.with_conv:
@@ -111,12 +109,14 @@ class Downsample(nn.Module):
 
 
 class ResnetBlock(nn.Module):
-    def __init__(self,
-                 in_channels,
-                 out_channels=None,
-                 conv_shortcut=False,
-                 dropout=0.1,
-                 temb_channels=512):
+    def __init__(
+        self,
+        in_channels,
+        out_channels=None,
+        conv_shortcut=False,
+        dropout=0.1,
+        temb_channels=512,
+    ):
         super().__init__()
         self.in_channels = in_channels
         out_channels = in_channels if out_channels is None else out_channels
@@ -124,32 +124,16 @@ class ResnetBlock(nn.Module):
         self.use_conv_shortcut = conv_shortcut
 
         self.norm1 = Normalize(in_channels)
-        self.conv1 = torch.nn.Conv1d(in_channels,
-                                     out_channels,
-                                     kernel_size=3,
-                                     stride=1,
-                                     padding=1)
+        self.conv1 = torch.nn.Conv1d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
         self.temb_proj = torch.nn.Linear(temb_channels, out_channels)
         self.norm2 = Normalize(out_channels)
         self.dropout = torch.nn.Dropout(dropout)
-        self.conv2 = torch.nn.Conv1d(out_channels,
-                                     out_channels,
-                                     kernel_size=3,
-                                     stride=1,
-                                     padding=1)
+        self.conv2 = torch.nn.Conv1d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
         if self.in_channels != self.out_channels:
             if self.use_conv_shortcut:
-                self.conv_shortcut = torch.nn.Conv1d(in_channels,
-                                                     out_channels,
-                                                     kernel_size=3,
-                                                     stride=1,
-                                                     padding=1)
+                self.conv_shortcut = torch.nn.Conv1d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
             else:
-                self.nin_shortcut = torch.nn.Conv1d(in_channels,
-                                                    out_channels,
-                                                    kernel_size=1,
-                                                    stride=1,
-                                                    padding=0)
+                self.nin_shortcut = torch.nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
 
     def forward(self, x, temb):
         h = x
@@ -170,32 +154,17 @@ class ResnetBlock(nn.Module):
 
         return x + h
 
+
 class AttnBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
         self.in_channels = in_channels
 
         self.norm = Normalize(in_channels)
-        self.q = torch.nn.Conv1d(in_channels,
-                                 in_channels,
-                                 kernel_size=1,
-                                 stride=1,
-                                 padding=0)
-        self.k = torch.nn.Conv1d(in_channels,
-                                 in_channels,
-                                 kernel_size=1,
-                                 stride=1,
-                                 padding=0)
-        self.v = torch.nn.Conv1d(in_channels,
-                                 in_channels,
-                                 kernel_size=1,
-                                 stride=1,
-                                 padding=0)
-        self.proj_out = torch.nn.Conv1d(in_channels,
-                                        in_channels,
-                                        kernel_size=1,
-                                        stride=1,
-                                        padding=0)
+        self.q = torch.nn.Conv1d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+        self.k = torch.nn.Conv1d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+        self.v = torch.nn.Conv1d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+        self.proj_out = torch.nn.Conv1d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
 
     def forward(self, x):
         h_ = x
@@ -206,7 +175,7 @@ class AttnBlock(nn.Module):
         b, c, w = q.shape
         q = q.permute(0, 2, 1)  # b,hw,c
         w_ = torch.bmm(q, k)  # b,hw,hw    w[b,i,j]=sum_c q[b,i,c]k[b,c,j]
-        w_ = w_ * (int(c)**(-0.5))
+        w_ = w_ * (int(c) ** (-0.5))
         w_ = torch.nn.functional.softmax(w_, dim=2)
         # attend to values
         w_ = w_.permute(0, 2, 1)  # b,hw,hw (first hw of k, second of q)
@@ -216,12 +185,17 @@ class AttnBlock(nn.Module):
         h_ = self.proj_out(h_)
 
         return x + h_
-#==============================================================================================
 
-#====================================Basic Model===============================================
+
+# ==============================================================================================
+
+
+# ====================================Basic Model===============================================
 class Swish(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         return torch.sigmoid(x) * x
+
+
 class MLP(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim=None, od_finer=False):
         super().__init__()
@@ -231,10 +205,12 @@ class MLP(nn.Module):
         self.od_finer = od_finer
 
         # Main network layers defined using a loop for conciseness
-        self.fc_layers = nn.ModuleList([
-            nn.Linear(input_dim, hidden_dim),
-            *[nn.Linear(hidden_dim, hidden_dim) for _ in range(5)]
-        ])
+        self.fc_layers = nn.ModuleList(
+            [
+                nn.Linear(input_dim, hidden_dim),
+                *[nn.Linear(hidden_dim, hidden_dim) for _ in range(5)],
+            ]
+        )
 
         # Output layers
         if self.od_finer:
@@ -263,8 +239,15 @@ class MLP(nn.Module):
         else:
             return self.output(features)
 
+
 class CNN(nn.Module):
-    def __init__(self, input_dim: int = 2, time_dim: int = 1, hidden_dim: int = 128, kernel_size: int = 3):
+    def __init__(
+        self,
+        input_dim: int = 2,
+        time_dim: int = 1,
+        hidden_dim: int = 128,
+        kernel_size: int = 3,
+    ):
         super().__init__()
         self.input_dim = input_dim
         self.time_dim = time_dim
@@ -309,9 +292,16 @@ class CNN(nn.Module):
         # Reshape back to original shape
         return output.reshape(*original_shape)
 
+
 class TransformerVelocity(nn.Module):
-    def __init__(self, input_dim: int = 2, time_dim: int = 1, hidden_dim: int = 128, n_heads: int = 4,
-                 n_layers: int = 2):
+    def __init__(
+        self,
+        input_dim: int = 2,
+        time_dim: int = 1,
+        hidden_dim: int = 128,
+        n_heads: int = 4,
+        n_layers: int = 2,
+    ):
         super().__init__()
         self.input_dim = input_dim
         self.time_dim = time_dim
@@ -328,8 +318,8 @@ class TransformerVelocity(nn.Module):
             d_model=hidden_dim,
             nhead=n_heads,
             dim_feedforward=hidden_dim * 2,
-            activation='gelu',
-            batch_first=True
+            activation="gelu",
+            batch_first=True,
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
 
@@ -363,8 +353,15 @@ class TransformerVelocity(nn.Module):
         # Reshape back to original shape
         return output.reshape(*original_shape)
 
+
 class BiLSTMVelocity(nn.Module):
-    def __init__(self, input_dim: int = 2, time_dim: int = 1, hidden_dim: int = 128, n_layers: int = 2):
+    def __init__(
+        self,
+        input_dim: int = 2,
+        time_dim: int = 1,
+        hidden_dim: int = 128,
+        n_layers: int = 2,
+    ):
         super().__init__()
         self.input_dim = input_dim
         self.time_dim = time_dim
@@ -382,7 +379,7 @@ class BiLSTMVelocity(nn.Module):
             hidden_size=hidden_dim // 2,  # Will be bidirectional, so final output is hidden_dim
             num_layers=n_layers,
             bidirectional=True,
-            batch_first=True
+            batch_first=True,
         )
 
         # Output projection
@@ -414,15 +411,22 @@ class BiLSTMVelocity(nn.Module):
 
         # Reshape back to original shape
         return output.reshape(*original_shape)
-#==============================================================================================
 
-#====================================Unet Model================================================
+
+# ==============================================================================================
+
+
+# ====================================Unet Model================================================
 class TrajUnet(nn.Module):
     def __init__(self, config):
         super().__init__()
-        config = Dict2Obj(config) # dict to object
+        config = Dict2Obj(config)  # dict to object
         self.config = config
-        ch, out_ch, ch_mult = config.unet.ch, config.unet.out_ch, tuple(config.unet.ch_mult)
+        ch, out_ch, ch_mult = (
+            config.unet.ch,
+            config.unet.out_ch,
+            tuple(config.unet.ch_mult),
+        )
         num_res_blocks = config.unet.num_res_blocks
         attn_resolutions = config.unet.attn_resolutions
         dropout = config.unet.dropout
@@ -435,7 +439,7 @@ class TrajUnet(nn.Module):
 
         if config.ddpm.enabled:
             num_timesteps = config.ddpm.num_diffusion_timesteps
-            if config.model.type == 'bayesian':
+            if config.model.type == "bayesian":
                 self.logvar = nn.Parameter(torch.zeros(num_timesteps))
 
         self.ch = ch
@@ -447,21 +451,19 @@ class TrajUnet(nn.Module):
 
         # timestep embedding for diffusion
         self.temb = nn.Module()
-        self.temb.dense = nn.ModuleList([
-            torch.nn.Linear(self.ch, self.temb_ch),
-            nn.SiLU(), # for Flow Matching
-            torch.nn.Linear(self.temb_ch, self.temb_ch),
-        ])
+        self.temb.dense = nn.ModuleList(
+            [
+                torch.nn.Linear(self.ch, self.temb_ch),
+                nn.SiLU(),  # for Flow Matching
+                torch.nn.Linear(self.temb_ch, self.temb_ch),
+            ]
+        )
 
         # downsampling
-        self.conv_in = torch.nn.Conv1d(in_channels,
-                                       self.ch,
-                                       kernel_size=3,
-                                       stride=1,
-                                       padding=1)
+        self.conv_in = torch.nn.Conv1d(in_channels, self.ch, kernel_size=3, stride=1, padding=1)
 
         curr_res = resolution
-        in_ch_mult = (1, ) + ch_mult
+        in_ch_mult = (1,) + ch_mult
         self.down = nn.ModuleList()
         block_in = None
         for i_level in range(self.num_resolutions):
@@ -471,10 +473,13 @@ class TrajUnet(nn.Module):
             block_out = ch * ch_mult[i_level]
             for i_block in range(self.num_res_blocks):
                 block.append(
-                    ResnetBlock(in_channels=block_in,
-                                out_channels=block_out,
-                                temb_channels=self.temb_ch,
-                                dropout=dropout))
+                    ResnetBlock(
+                        in_channels=block_in,
+                        out_channels=block_out,
+                        temb_channels=self.temb_ch,
+                        dropout=dropout,
+                    )
+                )
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(AttnBlock(block_in))
@@ -488,15 +493,19 @@ class TrajUnet(nn.Module):
 
         # middle
         self.mid = nn.Module()
-        self.mid.block_1 = ResnetBlock(in_channels=block_in,
-                                       out_channels=block_in,
-                                       temb_channels=self.temb_ch,
-                                       dropout=dropout)
+        self.mid.block_1 = ResnetBlock(
+            in_channels=block_in,
+            out_channels=block_in,
+            temb_channels=self.temb_ch,
+            dropout=dropout,
+        )
         self.mid.attn_1 = AttnBlock(block_in)
-        self.mid.block_2 = ResnetBlock(in_channels=block_in,
-                                       out_channels=block_in,
-                                       temb_channels=self.temb_ch,
-                                       dropout=dropout)
+        self.mid.block_2 = ResnetBlock(
+            in_channels=block_in,
+            out_channels=block_in,
+            temb_channels=self.temb_ch,
+            dropout=dropout,
+        )
 
         # upsampling
         self.up = nn.ModuleList()
@@ -509,10 +518,13 @@ class TrajUnet(nn.Module):
                 if i_block == self.num_res_blocks:
                     skip_in = ch * in_ch_mult[i_level]
                 block.append(
-                    ResnetBlock(in_channels=block_in + skip_in,
-                                out_channels=block_out,
-                                temb_channels=self.temb_ch,
-                                dropout=dropout))
+                    ResnetBlock(
+                        in_channels=block_in + skip_in,
+                        out_channels=block_out,
+                        temb_channels=self.temb_ch,
+                        dropout=dropout,
+                    )
+                )
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(AttnBlock(block_in))
@@ -526,23 +538,19 @@ class TrajUnet(nn.Module):
 
         # end
         self.norm_out = Normalize(block_in)
-        self.conv_out = torch.nn.Conv1d(block_in,
-                                        out_ch,
-                                        kernel_size=3,
-                                        stride=1,
-                                        padding=1)
+        self.conv_out = torch.nn.Conv1d(block_in, out_ch, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x, t, extra_embed=None):
         if self.config.data.od_finer == True:
-            assert x.shape[2] == self.resolution+2 # 4/2
+            assert x.shape[2] == self.resolution + 2  # 4/2
         else:
-            pass # assert x.shape[1] == self.resolution
+            pass  # assert x.shape[1] == self.resolution
         # timestep embedding
         if self.config.ddpm.enabled:
             # For Diffusion models, use sinusoidal embedding
             if t.dim() == 2:
                 t = t.squeeze(1)
-            temb = get_timestep_embedding(t, self.ch,self.config.ddpm.enabled)
+            temb = get_timestep_embedding(t, self.ch, self.config.ddpm.enabled)
             temb = self.temb.dense[0](temb)
             temb = nonlinearity(temb)
             temb = self.temb.dense[1](temb)
@@ -553,12 +561,12 @@ class TrajUnet(nn.Module):
             if t.dim() == 2:
                 t = t.squeeze(1)
             # Linear embedding of time instead of sinusoidal embedding
-            temb = get_timestep_embedding(t, self.ch,self.config.ddpm.enabled)
+            temb = get_timestep_embedding(t, self.ch, self.config.ddpm.enabled)
             temb = self.temb.dense[0](temb)
             temb = nonlinearity(temb)
             temb = self.temb.dense[1](temb)
             # Add extra embedding if provided
-            if extra_embed is not None: # Test: not add t info to each layer!
+            if extra_embed is not None:  # Test: not add t info to each layer!
                 temb = temb + extra_embed
 
         # downsampling
@@ -582,10 +590,8 @@ class TrajUnet(nn.Module):
             for i_block in range(self.num_res_blocks + 1):
                 ht = hs.pop()
                 if ht.size(-1) != h.size(-1):
-                    h = torch.nn.functional.pad(h,
-                                                (0, ht.size(-1) - h.size(-1)))
-                h = self.up[i_level].block[i_block](torch.cat([h, ht], dim=1),
-                                                    temb)
+                    h = torch.nn.functional.pad(h, (0, ht.size(-1) - h.size(-1)))
+                h = self.up[i_level].block[i_block](torch.cat([h, ht], dim=1), temb)
                 if len(self.up[i_level].attn) > 0:
                     h = self.up[i_level].attn[i_block](h)
             if i_level != 0:
@@ -596,9 +602,12 @@ class TrajUnet(nn.Module):
         h = nonlinearity(h)
         h = self.conv_out(h)
         return h
-#==============================================================================================
 
-#====================================Condition Embedding========================================
+
+# ==============================================================================================
+
+
+# ====================================Condition Embedding========================================
 class SimpleMLPEmb(nn.Module):
     """Simple MLP for condition embedding using one-hot encoding"""
 
@@ -611,7 +620,7 @@ class SimpleMLPEmb(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, embedding_dim)
+            nn.Linear(hidden_dim, embedding_dim),
         )
 
         self.d_net = nn.Sequential(
@@ -619,13 +628,13 @@ class SimpleMLPEmb(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, embedding_dim)
+            nn.Linear(hidden_dim, embedding_dim),
         )
 
         self.combine_net = nn.Sequential(
             nn.Linear(embedding_dim * 2, embedding_dim),
             nn.SiLU(),
-            nn.Linear(embedding_dim, embedding_dim)
+            nn.Linear(embedding_dim, embedding_dim),
         )
 
     def forward(self, c, geohash=False):
@@ -643,28 +652,31 @@ class SimpleMLPEmb(nn.Module):
         # Concatenate embeddings and process them together
         combined = torch.cat([o_embed, d_embed], dim=1)
         return self.combine_net(combined)
+
+
 class SimpleMLPEmb2(nn.Module):
     """Simple MLP for condition embedding"""
 
-    def __init__(self, input_dim,embedding_dim, hidden_dim):
+    def __init__(self, input_dim, embedding_dim, hidden_dim):
         super().__init__()
         self.o_net = nn.Sequential(
             nn.Embedding(input_dim, hidden_dim),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, embedding_dim)
+            nn.Linear(hidden_dim, embedding_dim),
         )
         self.d_net = nn.Sequential(
             nn.Embedding(input_dim, hidden_dim),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, embedding_dim)
+            nn.Linear(hidden_dim, embedding_dim),
         )
         self.combine_net = nn.Sequential(
             nn.Linear(embedding_dim * 2, embedding_dim),
             nn.SiLU(),
-            nn.Linear(embedding_dim, embedding_dim)
+            nn.Linear(embedding_dim, embedding_dim),
         )
+
     def forward(self, c, geohash=False):
         # Extract origin and destination from input
         o, d = c[:, 0].long(), c[:, 1].long()
@@ -677,11 +689,12 @@ class SimpleMLPEmb2(nn.Module):
         combined = torch.cat([o_embed, d_embed], dim=1)
         return self.combine_net(combined)
 
+
 class WideAndDeep(nn.Module):
-    def __init__(self, embedding_dim=128, hidden_dim=256,location_emb_dim=5000,config=None):
+    def __init__(self, embedding_dim=128, hidden_dim=256, location_emb_dim=5000, config=None):
         super(WideAndDeep, self).__init__()
 
-        self.encoding_bias = 0 #1
+        self.encoding_bias = 0  # 1
         location_emb_dim = location_emb_dim + self.encoding_bias
         config = Dict2Obj(config)
         self.config = config
@@ -696,22 +709,22 @@ class WideAndDeep(nn.Module):
             self.sid_embedding = nn.Embedding(location_emb_dim, hidden_dim)
             self.eid_embedding = nn.Embedding(location_emb_dim, hidden_dim)
         if config.condition.transportation_mode == False:
-            self.deep_fc1 = nn.Linear(hidden_dim*3, embedding_dim)
+            self.deep_fc1 = nn.Linear(hidden_dim * 3, embedding_dim)
         else:
             tmode_number = 5 + self.encoding_bias
             self.tmode_embedding = nn.Embedding(tmode_number, hidden_dim)
-            self.deep_fc1 = nn.Linear(hidden_dim*4, embedding_dim)
+            self.deep_fc1 = nn.Linear(hidden_dim * 4, embedding_dim)
         self.deep_fc2 = nn.Linear(embedding_dim, embedding_dim)
         # Open-source configs omit AOI features; default them to disabled.
-        if not hasattr(config.data, 'AOITYPE'):
+        if not hasattr(config.data, "AOITYPE"):
             config.data.AOITYPE = False
-        if not hasattr(config.data, 'AOIEMB'):
+        if not hasattr(config.data, "AOIEMB"):
             config.data.AOIEMB = False
         if config.data.AOITYPE == True:
             aoitype_number = 7 + self.encoding_bias
             self.aoi_embedding = nn.Embedding(aoitype_number, hidden_dim)
-            self.sid_aoi_embedding = nn.Linear(hidden_dim*2, hidden_dim)
-            self.eid_aoi_embedding = nn.Linear(hidden_dim*2, hidden_dim)
+            self.sid_aoi_embedding = nn.Linear(hidden_dim * 2, hidden_dim)
+            self.eid_aoi_embedding = nn.Linear(hidden_dim * 2, hidden_dim)
         elif config.data.AOIEMB == True:
             self.aoi_emb_dim = 64
             self.sid_aoi_embedding = nn.Linear(self.aoi_emb_dim, hidden_dim)
@@ -729,17 +742,20 @@ class WideAndDeep(nn.Module):
         if geohash == True:
             depature = attr[:, 0].long()
             # trans attr[:, 6] and attr[:, 7] to string
-            sid = attr[:, 6 : 6+self.location_emb_dim]
-            eid = attr[:, 6+self.location_emb_dim:6+self.location_emb_dim*2]
+            sid = attr[:, 6 : 6 + self.location_emb_dim]
+            eid = attr[:, 6 + self.location_emb_dim : 6 + self.location_emb_dim * 2]
         else:
-            depature, sid, eid = attr[:, 0].long(
-            ), attr[:, 6].long()+ self.encoding_bias, attr[:, 7].long()+ self.encoding_bias
+            depature, sid, eid = (
+                attr[:, 0].long(),
+                attr[:, 6].long() + self.encoding_bias,
+                attr[:, 7].long() + self.encoding_bias,
+            )
         if self.config.data.AOITYPE == True:
-            s_aoi = attr[:, 8].long()+ self.encoding_bias
-            e_aoi = attr[:, 9].long()+ self.encoding_bias
+            s_aoi = attr[:, 8].long() + self.encoding_bias
+            e_aoi = attr[:, 9].long() + self.encoding_bias
         elif self.config.data.AOIEMB == True:
-            s_aoi = attr[:, 8 : 8+self.aoi_emb_dim]
-            e_aoi = attr[:, 8+self.aoi_emb_dim:8+self.aoi_emb_dim*2]
+            s_aoi = attr[:, 8 : 8 + self.aoi_emb_dim]
+            e_aoi = attr[:, 8 + self.aoi_emb_dim : 8 + self.aoi_emb_dim * 2]
         else:
             pass
 
@@ -768,33 +784,45 @@ class WideAndDeep(nn.Module):
         else:
             tmode = attr[:, 8].long()
             tmode_embed = self.tmode_embedding(tmode)
-            categorical_embed = torch.cat((depature_embed, sid_embed, eid_embed,tmode_embed), dim=1)
+            categorical_embed = torch.cat((depature_embed, sid_embed, eid_embed, tmode_embed), dim=1)
         deep_out = F.relu(self.deep_fc1(categorical_embed))
         deep_out = self.deep_fc2(deep_out)
         # Combine wide and deep embeddings
         combined_embed = wide_out + deep_out
 
         return combined_embed
-#================================================================================================
 
-#====================================Flow Matching Model=========================================
+
+# ================================================================================================
+
+
+# ====================================Flow Matching Model=========================================
 class ConditionalVelocityModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, condition_dim=0, embedding_dim=128, dropout_prob=0.1, config=None,dataset=None):
+    def __init__(
+        self,
+        input_dim,
+        hidden_dim,
+        condition_dim=0,
+        embedding_dim=128,
+        dropout_prob=0.1,
+        config=None,
+        dataset=None,
+    ):
         super().__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.config = config
         self.dropout_prob = dropout_prob
-        self.model_type = config['model']['type']
+        self.model_type = config["model"]["type"]
 
         # Determine if conditional from config
         self.conditional = self._is_conditional(config, condition_dim)
 
         if self.conditional:
             # Initialize condition embedding and model
-            self.condition_embedding_model = self._get_condition_embedding(config, embedding_dim, hidden_dim,dataset)
+            self.condition_embedding_model = self._get_condition_embedding(config, embedding_dim, hidden_dim, dataset)
             self.condition_dropout = nn.Dropout(self.dropout_prob)
-            self.net = self._build_model(input_dim + 1 + embedding_dim, hidden_dim) # for MLP default
+            self.net = self._build_model(input_dim + 1 + embedding_dim, hidden_dim)  # for MLP default
         else:
             # Unconditional model
             self.net = self._build_model(input_dim + 1, hidden_dim)
@@ -803,50 +831,66 @@ class ConditionalVelocityModel(nn.Module):
         """Determine if model should be conditional based on config or condition_dim"""
         if config:
             if isinstance(config, dict):
-                return config.get('condition', {}).get('enabled', False)
+                return config.get("condition", {}).get("enabled", False)
             else:
-                return getattr(config, 'condition', {}).enabled if hasattr(getattr(config, 'flow_matching', {}), 'enabled') else False
+                return (
+                    getattr(config, "condition", {}).enabled
+                    if hasattr(getattr(config, "flow_matching", {}), "enabled")
+                    else False
+                )
         return condition_dim > 0
 
-    def _get_condition_embedding(self, config, embedding_dim, hidden_dim,dataset):
+    def _get_condition_embedding(self, config, embedding_dim, hidden_dim, dataset):
         """Get the appropriate condition embedding module based on config"""
-        embedding_type = config['condition']['embedding_type']
+        embedding_type = config["condition"]["embedding_type"]
         location_emb_dim = dataset.location_dim
 
-        if embedding_type == 'wide_and_deep':
-            return WideAndDeep(embedding_dim=embedding_dim, hidden_dim=hidden_dim,
-                               location_emb_dim=location_emb_dim, config=config)
-        elif embedding_type == 'simple_mlp':
-            return SimpleMLPEmb(input_dim=location_emb_dim,embedding_dim=embedding_dim, hidden_dim=hidden_dim)
+        if embedding_type == "wide_and_deep":
+            return WideAndDeep(
+                embedding_dim=embedding_dim,
+                hidden_dim=hidden_dim,
+                location_emb_dim=location_emb_dim,
+                config=config,
+            )
+        elif embedding_type == "simple_mlp":
+            return SimpleMLPEmb(
+                input_dim=location_emb_dim,
+                embedding_dim=embedding_dim,
+                hidden_dim=hidden_dim,
+            )
         else:
             # Default to SimpleMLPEmb
-            return SimpleMLPEmb(input_dim=location_emb_dim,embedding_dim=embedding_dim, hidden_dim=hidden_dim)
+            return SimpleMLPEmb(
+                input_dim=location_emb_dim,
+                embedding_dim=embedding_dim,
+                hidden_dim=hidden_dim,
+            )
 
     def _build_model(self, input_dim, hidden_dim):
         """Build the appropriate model based on config"""
         model_type = self.model_type
         if self.config:
             if isinstance(self.config, dict):
-                model_type = self.config.get('model', {}).get('type', 'mlp')
+                model_type = self.config.get("model", {}).get("type", "mlp")
             else:
-                model_type = getattr(getattr(self.config, 'model', object()), 'type', 'mlp')
-        if self.config['data']['od_finer' ]== True:
+                model_type = getattr(getattr(self.config, "model", object()), "type", "mlp")
+        if self.config["data"]["od_finer"] == True:
             input_dim = input_dim + 4
 
-        if model_type == 'cnn':
+        if model_type == "cnn":
             return CNN(input_dim, time_dim=1, hidden_dim=hidden_dim)
-        elif model_type == 'transformer':
+        elif model_type == "transformer":
             return TransformerVelocity(input_dim, time_dim=1, hidden_dim=hidden_dim)
-        elif model_type == 'bilstm':
+        elif model_type == "bilstm":
             return BiLSTMVelocity(input_dim, time_dim=1, hidden_dim=hidden_dim)
-        elif model_type == 'unet':
+        elif model_type == "unet":
             return TrajUnet(self.config)
         else:  # Default to MLP
             return MLP(
                 input_dim=input_dim,
                 hidden_dim=hidden_dim,
                 output_dim=self.input_dim,
-                od_finer=self.config['data']['od_finer']
+                od_finer=self.config["data"]["od_finer"],
             )
 
     def forward(self, x, t, c=None, force_drop_ids=None):
@@ -855,14 +899,14 @@ class ConditionalVelocityModel(nn.Module):
         if t.dim() == 1:
             t = t.unsqueeze(1)
 
-        if self.model_type == 'unet':
+        if self.model_type == "unet":
             x = x.reshape(x.size(0), -1, 2)
             x = x.swapaxes(1, 2)
             # Process condition embedding
             c = self.condition_embedding_model(c)
-            y_t = self.net(x,t,c) # (self, x, t, extra_embed=None)
+            y_t = self.net(x, t, c)  # (self, x, t, extra_embed=None)
             y_t = y_t.swapaxes(1, 2)
-            if self.config['data']['od_finer'] == False:
+            if self.config["data"]["od_finer"] == False:
                 y_t = y_t
             else:
                 y_t = y_t
@@ -885,9 +929,11 @@ class ConditionalVelocityModel(nn.Module):
                 x_t = torch.cat([x, t], dim=1)
                 y_t = self.net(x_t)
             # Reshape output to match input shape
-            if self.config['data']['od_finer'] == False:
-                y_t = y_t.view(x.size(0), self.input_dim//2, 2)
+            if self.config["data"]["od_finer"] == False:
+                y_t = y_t.view(x.size(0), self.input_dim // 2, 2)
             else:
                 y_t = y_t
         return y_t
+
+
 # ================================================================================================

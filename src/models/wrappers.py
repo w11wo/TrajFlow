@@ -2,12 +2,15 @@ import torch
 from torch import nn
 from flow_matching.utils import ModelWrapper
 
+
 class WrappedModel(ModelWrapper):
     def forward(self, x: torch.Tensor, t: torch.Tensor, **extras):
-        return self.model(x, t,**extras)
+        return self.model(x, t, **extras)
+
 
 class ProjectToTangent(nn.Module):
     """Wraps a velocity field model to project onto tangent space of a manifold"""
+
     def __init__(self, vecfield, manifold):
         super().__init__()
         self.vecfield = vecfield
@@ -47,10 +50,13 @@ class ConditionedVelocityModelWrapper(nn.Module):
         c_doubled = torch.cat([self.condition, self.condition], dim=0)
 
         # Create force_drop_ids (0=keep condition, 1=drop condition)
-        force_drop_ids = torch.cat([
-            torch.zeros(batch_size, dtype=torch.long, device=x.device),
-            torch.ones(batch_size, dtype=torch.long, device=x.device)
-        ], dim=0)
+        force_drop_ids = torch.cat(
+            [
+                torch.zeros(batch_size, dtype=torch.long, device=x.device),
+                torch.ones(batch_size, dtype=torch.long, device=x.device),
+            ],
+            dim=0,
+        )
 
         # Single forward pass with doubled batch
         v_doubled = self.velocity_model(x_doubled, t_doubled, c=c_doubled, force_drop_ids=force_drop_ids, **kwargs)
