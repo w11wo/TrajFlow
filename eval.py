@@ -1,4 +1,6 @@
 import json
+from functools import partial
+from multiprocessing import Pool
 from argparse import ArgumentParser
 from ast import literal_eval
 from pathlib import Path
@@ -34,8 +36,20 @@ def parse_args():
         required=True,
         help="Path to the .csv file containing map-matched generated trajectories",
     )
+    parser.add_argument(
+        "--local_protocol",
+        choices=["per_traj", "od"],
+        default="per_traj",
+        help="per_traj: compare each generated trajectory with the real trajectory it was generated for; "
+        "od: HOSER's protocol, pairing real and generated trajectories within (origin, destination) grid cells",
+    )
+    parser.add_argument("--num_workers", type=int, default=16)
     args = parser.parse_args()
     return args
+
+
+def _local_metrics(pair, road_gps):
+    return compute_local_trajectory_metrics(pair[0], pair[1], road_gps)
 
 
 def main(args):
@@ -91,32 +105,41 @@ def main(args):
     distance_js_divergence = js_divergence(real_distance_distribution, predicted_distance_distribution)
     radius_js_divergence = js_divergence(real_radius_distribution, predicted_radius_distribution)
 
-    def group_trajectories_by_grid_od(rid_lists: list[list[int]]):
-        od_groups = dict()
-        for idx, rid_list in enumerate(rid_lists):
-            o_rid, d_rid = rid_list[0], rid_list[-1]
-            o_rid_x, o_rid_y = map_manager.gps2grid(*road_gps[o_rid])
-            d_rid_x, d_rid_y = map_manager.gps2grid(*road_gps[d_rid])
-            key = (o_rid_x * map_manager.img_height + o_rid_y, d_rid_x * map_manager.img_height + d_rid_y)
-            od_groups[key] = od_groups.get(key, []) + [idx]
-        return od_groups
+    if args.local_protocol == "per_traj":
+        # pair each generated trajectory with the real trajectory of the same id; generated trajectories that failed
+        # map-matching have no pair and are skipped (as they are excluded from the global metrics)
+        both = merged_df["cpath_label"].notna() & merged_df["cpath_gen"].notna()
+        pairs = [
+            (literal_eval(real), literal_eval(gen))
+            for real, gen in zip(merged_df.loc[both, "cpath_label"], merged_df.loc[both, "cpath_gen"])
+        ]
+    else:
 
-    real_od2traj_id = group_trajectories_by_grid_od(label_rids)
-    predicted_od2traj_id = group_trajectories_by_grid_od(prediction_rids)
+        def group_trajectories_by_grid_od(rid_lists: list[list[int]]):
+            od_groups = dict()
+            for idx, rid_list in enumerate(rid_lists):
+                o_rid, d_rid = rid_list[0], rid_list[-1]
+                o_rid_x, o_rid_y = map_manager.gps2grid(*road_gps[o_rid])
+                d_rid_x, d_rid_y = map_manager.gps2grid(*road_gps[d_rid])
+                key = (o_rid_x * map_manager.img_height + o_rid_y, d_rid_x * map_manager.img_height + d_rid_y)
+                od_groups[key] = od_groups.get(key, []) + [idx]
+            return od_groups
 
-    haudorff_list, dtw_list, edr_list = [], [], []
-    common_keys = set(real_od2traj_id.keys()) & set(predicted_od2traj_id.keys())
-    for key in tqdm(common_keys, desc="Computing Local Trajectory Metrics"):
-        num_points = min(len(real_od2traj_id[key]), len(predicted_od2traj_id[key]))
-        for i in range(num_points):
-            real_idx = real_od2traj_id[key][i]
-            pred_idx = predicted_od2traj_id[key][i]
-            hausdorff, dtw, edr = compute_local_trajectory_metrics(
-                label_rids[real_idx], prediction_rids[pred_idx], road_gps
-            )
-            haudorff_list.append(hausdorff)
-            dtw_list.append(dtw)
-            edr_list.append(edr)
+        real_od2traj_id = group_trajectories_by_grid_od(label_rids)
+        predicted_od2traj_id = group_trajectories_by_grid_od(prediction_rids)
+
+        pairs = []
+        for key in set(real_od2traj_id.keys()) & set(predicted_od2traj_id.keys()):
+            num_points = min(len(real_od2traj_id[key]), len(predicted_od2traj_id[key]))
+            for i in range(num_points):
+                pairs.append((label_rids[real_od2traj_id[key][i]], prediction_rids[predicted_od2traj_id[key][i]]))
+
+    local_fn = partial(_local_metrics, road_gps=road_gps)
+    with Pool(args.num_workers) as pool:
+        local_metrics = list(
+            tqdm(pool.imap(local_fn, pairs, chunksize=256), total=len(pairs), desc="Computing Local Trajectory Metrics")
+        )
+    haudorff_list, dtw_list, edr_list = (list(m) for m in zip(*local_metrics))
 
     eval_metrics = {
         "distance": distance_js_divergence.item(),
@@ -126,9 +149,13 @@ def main(args):
         "edr": np.mean(edr_list).item(),
     }
 
+    eval_metrics["local_protocol"] = args.local_protocol
+    eval_metrics["num_local_pairs"] = len(pairs)
+    eval_metrics["origin_match"] = float(np.mean([real[0] == pred[0] for real, pred in pairs]))
     print("Eval Metrics:", eval_metrics)
 
-    with open(args.label_trajs_csv.parent / "eval_metrics.json", "w") as f:
+    out_name = "eval_metrics.json" if args.local_protocol == "od" else "eval_metrics_per_traj.json"
+    with open(args.label_trajs_csv.parent / out_name, "w") as f:
         json.dump(eval_metrics, f, indent=4)
 
 
